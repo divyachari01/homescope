@@ -1,4 +1,4 @@
-# House Check
+# HomeScope
 
 A free website that sizes up any US zip code before you buy a home. You type a zip code and say what the home is for (to live in, as a rental, to live in part and rent out part, or as an Airbnb), and the page pulls together what you need to decide:
 

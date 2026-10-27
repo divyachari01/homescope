@@ -85,7 +85,7 @@ ACS_OLD_VARS = ["B01003_001E", "B19013_001E", "B25077_001E", "B25064_001E", "B25
                 "B15003_001E", "B15003_022E", "B15003_023E", "B15003_024E", "B15003_025E"]
 
 SESSION = requests.Session()
-SESSION.headers["User-Agent"] = "Mozilla/5.0 (compatible; house-check-data/1.0)"
+SESSION.headers["User-Agent"] = "Mozilla/5.0 (compatible; homescope-data/1.0)"
 OFFLINE = False
 
 

@@ -1,4 +1,4 @@
-// House Check page logic. Data files come from pipeline/build_data.py.
+// HomeScope page logic. Data files come from pipeline/build_data.py.
 (() => {
   const $ = s => document.querySelector(s);
   const DEFAULTS = {
