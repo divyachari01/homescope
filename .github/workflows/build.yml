@@ -17,7 +17,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -51,9 +51,19 @@ jobs:
           fi
 
       - name: Build data
-        run: python pipeline/build_data.py
+        run: |
+          set -o pipefail
+          python pipeline/build_data.py 2>&1 | tee build-log.txt
         env:
           CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
+
+      # Keep the last build's output in the repo (logs/last-build.txt) so problems are easy to read.
+      - name: Save build log
+        if: always()
+        run: |
+          mkdir -p logs && cp build-log.txt logs/last-build.txt 2>/dev/null || true
+          git add logs
+          git diff --cached --quiet || (git commit -m "Build log" && git pull --rebase -q && git push)
 
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -2,3 +2,4 @@ pandas>=2.0
 numpy
 openpyxl
 requests
+scikit-learn>=1.4

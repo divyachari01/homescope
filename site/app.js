@@ -331,10 +331,12 @@
   function renderTiming(o) {
     const hist = priceHistory(), tp = targetPrice(o);
     if (!hist || !tp) { $("#s-timing").innerHTML = ""; return; }
-    const b = bands(hist, o);
-    if (!b.plan) { $("#s-timing").innerHTML = `<h2>Outlook</h2><p class="note">Not enough price history here to build a range.</p>`; return; }
+    const b = bands(hist, o), fc = rec.fc && rec.fc["5"] ? rec.fc : null;
+    if (!fc && !b.plan) { $("#s-timing").innerHTML = `<h2>Outlook</h2><p class="note">Not enough price history here to build a range.</p>`; return; }
     const sim = { ...o, price0: tp, rate0: o.ratePct };
-    const scen = { low: b.plan.low, mid: b.plan.mid, high: b.plan.high };
+    const ann = x => Math.pow(1 + x / 100, 1 / 5) - 1;     // 5-year % change -> yearly rate
+    const scen = fc ? { low: ann(fc["5"][0]), mid: ann(fc["5"][1]), high: ann(fc["5"][2]) }
+                    : { low: b.plan.low, mid: b.plan.mid, high: b.plan.high };
     const plans = [null, 0, 1, 2, 3, 4, 5];
     const res = plans.map(kk => ({ k: kk, low: Calc.simulate(sim, kk, scen.low), mid: Calc.simulate(sim, kk, scen.mid), high: Calc.simulate(sim, kk, scen.high) }));
     const buyRows = res.filter(r => r.k !== null);
@@ -343,12 +345,12 @@
     const rentOnly = res[0];
     const yr = builtYear();
     let verdict;
-    if (!best) verdict = `Under the middle scenario the selected home doesn't fit your cash and income in the next 5 years. Try a cheaper type, a bigger down payment fund or a longer horizon.`;
+    if (!best) verdict = `Under the likely scenario the selected home doesn't fit your cash and income in the next 5 years. Try a cheaper type, a bigger down payment fund or a longer horizon.`;
     else {
       const gap = best.mid.netWorth - rentOnly.mid.netWorth;
       verdict = `Best timing for the selected home: <b>${best.k === 0 ? "now" : "in " + best.k + " year" + (best.k > 1 ? "s" : "") + " (" + (yr + best.k) + ")"}</b>. ` +
-        `After ${o.H} years that leaves you about ${k(Math.abs(gap))} ${gap >= 0 ? "ahead of" : "behind"} renting the whole time (middle scenario). ` +
-        (best.low.netWorth < rentOnly.low.netWorth ? `If prices grow like this zip's weakest stretches, renting would come out ahead.` : `It still beats renting in the weak-growth scenario.`);
+        `After ${o.H} years that leaves you about ${k(Math.abs(gap))} ${gap >= 0 ? "ahead of" : "behind"} renting the whole time (likely scenario). ` +
+        (best.low.netWorth < rentOnly.low.netWorth ? `In the low scenario, renting would come out ahead.` : `It still beats renting in the low scenario.`);
     }
     const rows = buyRows.map(r => `<tr${best && r.k === best.k ? ' class="best"' : ""}>
       <td>${r.k === 0 ? "Now" : yr + r.k}</td><td>${k(r.mid.price)}</td><td>${r.mid.rate.toFixed(2)}%</td><td>${money(r.mid.payment)}</td>
@@ -356,10 +358,10 @@
       <td>${k(r.low.netWorth)}</td><td>${k(r.mid.netWorth)}</td><td>${k(r.high.netWorth)}</td></tr>`).join("");
     $("#s-timing").innerHTML = `
       <h2>Outlook and best time to buy</h2>
-      <div class="asof">Ranges come from every past stretch of this zip's own price history (${b.plan.n} stretches of ${Math.min(o.H, 15)} years). Not a forecast.</div>
+      ${fc ? forecastBlock(fc) : `<div class="asof">No model forecast for this zip, so the range comes from every past stretch of its own price history (${b.plan.n} stretches). Not a forecast.</div>
       <div class="chart"><canvas id="cOutlook"></canvas></div>
-      <p class="note">Low / middle / high = how this zip grew in its weakest 10%, typical, and strongest 10% of past stretches: ${signed(scen.low * 100)}, ${signed(scen.mid * 100)}, ${signed(scen.high * 100)} a year.
-      ${rec.zhvi_1y != null ? `Zillow's own 1-year forecast for this zip: ${signed(rec.zhvi_1y)}.` : ""}</p>
+      <p class="note">Low / middle / high = how this zip grew in its weakest 10%, typical, and strongest 10% of past stretches: ${signed(scen.low * 100)}, ${signed(scen.mid * 100)}, ${signed(scen.high * 100)} a year.</p>`}
+      ${rec.zhvi_1y != null ? `<p class="note">For comparison, Zillow's own 1-year forecast for this zip: ${signed(rec.zhvi_1y)}.</p>` : ""}
       <p class="verdict">${verdict}</p>
       <div class="table-wrap"><table>
         <tr><th>Buy in</th><th>Price</th><th>Rate</th><th>Monthly</th><th>% income</th><th>Cash need / have</th><th>Works?</th><th>Net worth ${yr + o.H}: low</th><th>middle</th><th>high</th></tr>
@@ -367,24 +369,54 @@
         <tr><td>Keep renting</td><td colspan="6" class="muted" style="text-align:left">Rent ${money(o.rent0)}/mo, rising with typical rent growth, savings invested</td>
           <td>${k(rentOnly.low.netWorth)}</td><td>${k(rentOnly.mid.netWorth)}</td><td>${k(rentOnly.high.netWorth)}</td></tr>
       </table></div>
-      <p class="note">How it works: each plan spends the same each month (your rent now plus what you save). Whatever isn't spent on housing earns ${o.invReturn}%/yr. Rates drift by your "rate change over next 5 years" setting (${o.rateShift >= 0 ? "+" : ""}${o.rateShift} pts). Net worth counts savings plus home equity after ${o.sellPct}% selling costs. Rent grows ${o.rentGrowth.toFixed(1)}%/yr.</p>`;
+      <p class="note">${fc ? `Low / likely / high use the model's 5-year forecast: ${signed(scen.low * 100)}, ${signed(scen.mid * 100)}, ${signed(scen.high * 100)} a year, carried on after year 5. ` : ""}How it works: each plan spends the same each month (your rent now plus what you save). Whatever isn't spent on housing earns ${o.invReturn}%/yr. Rates drift by your "rate change over next 5 years" setting (${o.rateShift >= 0 ? "+" : ""}${o.rateShift} pts). Net worth counts savings plus home equity after ${o.sellPct}% selling costs. Rent grows ${o.rentGrowth.toFixed(1)}%/yr.</p>`;
     // fan chart: last 15 years of history + 10 years of range
     const lastI = hist.vals.length - 1, startI = Math.max(0, lastI - 15);
     const labels = [], hv = [], lo = [], mi = [], hi = [];
     for (let i = startI; i <= lastI; i++) { labels.push(hist.years[i]); hv.push(hist.vals[i]); lo.push(null); mi.push(null); hi.push(null); }
     const base = hist.vals[lastI];
     lo[lo.length - 1] = mi[mi.length - 1] = hi[hi.length - 1] = base;
-    for (let h = 1; h <= 10; h++) {
-      const bb = b.byH[h]; labels.push(hist.years[lastI] + h); hv.push(null);
-      lo.push(bb ? base * Math.pow(1 + bb.low, h) : null); mi.push(bb ? base * Math.pow(1 + bb.mid, h) : null); hi.push(bb ? base * Math.pow(1 + bb.high, h) : null);
+    for (let h = 1; h <= (fc ? 5 : 10); h++) {
+      labels.push(hist.years[lastI] + h); hv.push(null);
+      if (fc) {
+        const f = fc[String(h)];
+        lo.push(f ? base * (1 + f[0] / 100) : null); mi.push(f ? base * (1 + f[1] / 100) : null); hi.push(f ? base * (1 + f[2] / 100) : null);
+      } else {
+        const bb = b.byH[h];
+        lo.push(bb ? base * Math.pow(1 + bb.low, h) : null); mi.push(bb ? base * Math.pow(1 + bb.mid, h) : null); hi.push(bb ? base * Math.pow(1 + bb.high, h) : null);
+      }
     }
     makeChart("cOutlook", { type: "line", data: { labels, datasets: [
       { label: "History", data: hv, borderColor: css("--c1"), pointRadius: 0, borderWidth: 2 },
-      { label: "High", data: hi, borderColor: css("--c3"), borderDash: [4, 4], pointRadius: 0, borderWidth: 1.5, fill: "+2", backgroundColor: css("--accent-soft") },
-      { label: "Middle", data: mi, borderColor: css("--c3"), pointRadius: 0, borderWidth: 2 },
-      { label: "Low", data: lo, borderColor: css("--c3"), borderDash: [4, 4], pointRadius: 0, borderWidth: 1.5 },
+      { label: "High", data: hi, borderColor: css("--c3"), borderDash: [4, 4], pointRadius: fc ? 3 : 0, borderWidth: 1.5, fill: "+2", backgroundColor: css("--accent-soft"), spanGaps: true },
+      { label: fc ? "Likely" : "Middle", data: mi, borderColor: css("--c3"), pointRadius: fc ? 3 : 0, borderWidth: 2, spanGaps: true },
+      { label: "Low", data: lo, borderColor: css("--c3"), borderDash: [4, 4], pointRadius: fc ? 3 : 0, borderWidth: 1.5, spanGaps: true },
     ] }, options: { scales: { y: { ticks: { callback: v => k(v) } } },
       plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${k(c.parsed.y)}` } } } } });
+  }
+
+  // The model forecast, how well it did on past years, and what drives it.
+  function forecastBlock(fc) {
+    const M = NAT.model || {}, yr = M.base_year || builtYear(), now = rec.zhvi_now?.all;
+    const rows = ["1", "3", "5"].filter(h => fc[h]).map(h => `<tr><td>${yr + Number(h)} (${h} yr)</td>
+      <td>${signed(fc[h][0])}</td><td><b>${signed(fc[h][1])}</b></td><td>${signed(fc[h][2])}</td><td>${now ? k(now * (1 + fc[h][1] / 100)) : ""}</td></tr>`).join("");
+    const bt = (M.backtest || []).map(r => `<tr><td>${r.from} &rarr; ${r.to}${r.partial ? " (so far)" : ""}</td><td>${r.horizon} yr</td>
+      <td>${r.model_error.toFixed(1)}</td><td>${r.trend_error.toFixed(1)}</td><td>${pct(r.inside_range, 0)}</td></tr>`).join("");
+    const mine = rec.bt ? Object.entries(rec.bt).map(([T, v]) => `<tr><td>${T}${Number(T) === yr ? " (so far)" : ""}</td>
+      <td>${signed(v[0])} to ${signed(v[2])}</td><td>${signed(v[1])}</td><td>${signed(v[3])}</td><td>${v[3] >= v[0] && v[3] <= v[2] ? "Yes" : "No"}</td></tr>`).join("") : "";
+    const beat = (M.backtest || []).filter(r => !r.partial), wins = beat.filter(r => r.model_error < r.trend_error).length;
+    return `<div class="asof">Machine-learning model trained on every US zip from ${M.first_origin || 2014} on. It learns how price growth depends on price trends, rates, the stock market, income, rents, jobs, education, renters, crime, politics, landlord law and insurance.</div>
+      <div class="chart"><canvas id="cOutlook"></canvas></div>
+      <div class="table-wrap"><table><tr><th>Forecast for</th><th>Low</th><th>Likely</th><th>High</th><th>Typical value then</th></tr>${rows}</table></div>
+      <p class="note">Low and high are the model's 10th and 90th percentile: the price change should land between them about 8 times in 10.</p>
+      <details class="sub"><summary>How well did it predict 2022 to ${yr}?</summary>
+        <p class="note">Each row pretends it's the start year, trains only on what was known then, predicts, and compares with what actually happened across all zips. Error is the average miss in percentage points per year. "Trend only" just extends each zip's own 10-year trend.
+        ${beat.length ? `The model beat the trend-only guess in ${wins} of ${beat.length} completed tests.` : ""}</p>
+        <div class="table-wrap"><table><tr><th>Period</th><th>Horizon</th><th>Model error</th><th>Trend-only error</th><th>Inside range</th></tr>${bt}</table></div>
+        ${mine ? `<h3>This zip, 1 year ahead</h3><div class="table-wrap"><table><tr><th>Year</th><th>Predicted range</th><th>Likely</th><th>Actual</th><th>Inside?</th></tr>${mine}</table></div>` : ""}
+      </details>
+      ${M.drivers ? `<details class="sub"><summary>What drives the forecast</summary><p class="note">How much the 5-year forecast gets worse when each input is scrambled, as a share of the total. Bigger means the model leans on it more.</p>
+        <table>${M.drivers.map(([n, v]) => `<tr><td>${esc(n)}</td><td>${pct(v, 0)}</td></tr>`).join("")}</table></details>` : ""}`;
   }
 
   // ---------------------------------------------------------------- purpose-specific numbers

@@ -26,6 +26,8 @@ import numpy as np
 import pandas as pd
 import requests
 
+import forecast
+
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "raw"
 OUT = ROOT / "site" / "data"
@@ -40,6 +42,7 @@ SOURCES = {
     "rate30":  (FRED + "MORTGAGE30US", "rate30.csv", True, 0),
     "rate15":  (FRED + "MORTGAGE15US", "rate15.csv", False, 0),
     "cpi":     (FRED + "CPIAUCSL", "cpi.csv", True, 7),
+    "stocks":  (FRED + "NASDAQCOM", "nasdaq.csv", False, 0),
     "zhvi_all": (f"{ZILLOW}/zhvi/Zip_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv", "zhvi_all.csv", True, 3),
     "zhvi_sfr": (f"{ZILLOW}/zhvi/Zip_zhvi_uc_sfr_tier_0.33_0.67_sm_sa_month.csv", "zhvi_sfr.csv", False, 3),
     "zhvi_condo": (f"{ZILLOW}/zhvi/Zip_zhvi_uc_condo_tier_0.33_0.67_sm_sa_month.csv", "zhvi_condo.csv", False, 3),
@@ -329,6 +332,70 @@ def clean(obj):
     return obj
 
 
+def laws_table():
+    return pd.read_csv(STATE_TABLE, dtype=str).fillna("")
+
+
+def run_forecast(fh_wide, zhvi_year, acs_year, r30, zip_county, county_votes, laws, crime):
+    """Collect the inputs the forecast model needs and run it. Returns per-zip results."""
+    P = forecast.combined_prices(fh_wide, zhvi_year)
+    acs = {}
+    for y in range(2012, acs_year + 1):
+        a = load_acs(y, forecast.ACS_MODEL_VARS)
+        if a is not None:
+            acs[y] = a.set_index("zip")
+    macro = pd.DataFrame({"rate": r30.set_index("date")["value"].groupby(lambda d: d.year).mean()})
+    sp = fetch("stocks")
+    if sp:
+        macro["stocks"] = load_fred(sp).set_index("date")["value"].groupby(lambda d: d.year).mean()
+    else:
+        macro["stocks"] = np.nan
+    macro = macro.to_dict()
+
+    county_of = {z: c[0] for z, c in zip_county.items()}
+
+    def votes(y):
+        margin, shift = {}, {}
+        for fips, v in county_votes.items():
+            yrs = [i for i, yy in enumerate(v["years"]) if yy <= y]
+            if not yrs:
+                continue
+            i = yrs[-1]
+            margin[fips] = v["rep"][i] - v["dem"][i]
+            j = [k for k in yrs if v["years"][k] <= v["years"][i] - 8]
+            if j:
+                shift[fips] = margin[fips] - (v["rep"][j[-1]] - v["dem"][j[-1]])
+        zm = {z: margin.get(c) for z, c in county_of.items()}
+        zs = {z: shift.get(c) for z, c in county_of.items()}
+        return zm, zs
+
+    rc_code = {"cities banned": 0, "no statewide ban": 1, "no rent caps": 2, "local rent control": 3, "statewide": 4}
+    law = {}
+    for r in laws.itertuples():
+        code = next((v for k, v in rc_code.items() if r.rent_control.lower().startswith(k)), np.nan)
+        jc = 1.0 if r.just_cause.lower().startswith("yes") else 0.5 if r.just_cause.lower().startswith("limited") else 0.0
+        law[r.state] = (code, jc, float(r.nonpay_notice_days or 0), float(r.car_insurance or "nan"))
+    rows = {}
+    for z, c in county_of.items():
+        st = STATES.get(c[:2], ("",))[0]
+        lw = law.get(st, (np.nan,) * 4)
+        rows[z] = {"state": int(c[:2]), "rent_control": lw[0], "just_cause": lw[1], "notice_days": lw[2],
+                   "car_insurance": lw[3], "crime": crime.get(c, np.nan)}
+    static = pd.DataFrame.from_dict(rows, orient="index")
+
+    preds, past, summary = forecast.run(P, acs, macro, votes, static, log=log)
+    fc = {}
+    for h, df in preds.items():
+        for z, r in df.round(1).iterrows():
+            if r.notna().all():
+                fc.setdefault(z, {})[str(h)] = [r["low"], r["mid"], r["high"]]
+    bt = {}
+    for T, df in past.items():
+        for z, r in df.round(1).iterrows():
+            bt.setdefault(z, {})[str(T)] = [r["low"], r["mid"], r["high"], r["actual"]]
+    return fc, bt, summary
+
+
 # ---------------------------------------------------------------- main build
 
 def main():
@@ -481,6 +548,15 @@ def main():
             else:
                 gent[z] = "Lower-income, no gentrification signs"
 
+    # ---------- machine-learning forecast (skipped with a warning if anything goes wrong)
+    fc, bt = {}, {}
+    try:
+        log("Forecast model")
+        fc, bt, national["model"] = run_forecast(fh_wide, zhvi_year, acs_year, r30, zip_county,
+                                                 county_votes, laws_table(), crime)
+    except Exception as e:  # noqa: BLE001
+        log(f"  WARNING: forecast skipped: {e!r}")
+
     # ---------- write zip shards
     log("Writing zip files")
     zips = sorted(set(d.index) | set(zall.index) | set(fh_wide.index))
@@ -542,6 +618,10 @@ def main():
         if z in gent:
             rec["gent"] = gent[z]
         fips = rec.get("county_fips")
+        if z in fc:
+            rec["fc"] = fc[z]
+        if z in bt:
+            rec["bt"] = bt[z]
         if fips and fips in county_votes:
             rec["votes"] = county_votes[fips]
         if len(rec) <= 1:
@@ -555,7 +635,7 @@ def main():
         (OUT / "zips" / f"{prefix}.json").write_text(json.dumps(recs, separators=(",", ":")))
 
     # ---------- states (votes + landlord/tenant law table)
-    laws = pd.read_csv(STATE_TABLE, dtype=str).fillna("")
+    laws = laws_table()
     states = {}
     for r in laws.itertuples():
         states[r.state] = {"name": r.name, "car_insurance": int(r.car_insurance) if r.car_insurance else None,
