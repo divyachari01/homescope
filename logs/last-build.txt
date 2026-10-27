@@ -1,0 +1,2 @@
+National series
+ERROR: required source rate30 unavailable: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
