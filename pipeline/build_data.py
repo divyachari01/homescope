@@ -39,9 +39,11 @@ FRED = "https://fred.stlouisfed.org/graph/fredgraph.csv?id="
 
 # name: (url or list of candidate urls, local file, required?, max age in days)
 SOURCES = {
-    "rate30":  (FRED + "MORTGAGE30US", "rate30.csv", True, 0),
+    "rate30":  (FRED + "MORTGAGE30US", "rate30.csv", False, 0),
     "rate15":  (FRED + "MORTGAGE15US", "rate15.csv", False, 0),
-    "cpi":     (FRED + "CPIAUCSL", "cpi.csv", True, 7),
+    "pmms":    ("https://www.freddiemac.com/pmms/docs/PMMS_history.csv", "pmms.csv", False, 0),  # backup for rates
+    "cpi":     (FRED + "CPIAUCSL", "cpi.csv", False, 7),
+    "cpi_bls": ("https://download.bls.gov/pub/time.series/cu/cu.data.1.AllItems", "cpi_bls.txt", False, 7),
     "stocks":  (FRED + "NASDAQCOM", "nasdaq.csv", False, 0),
     "zhvi_all": (f"{ZILLOW}/zhvi/Zip_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv", "zhvi_all.csv", True, 3),
     "zhvi_sfr": (f"{ZILLOW}/zhvi/Zip_zhvi_uc_sfr_tier_0.33_0.67_sm_sa_month.csv", "zhvi_sfr.csv", False, 3),
@@ -88,7 +90,11 @@ ACS_OLD_VARS = ["B01003_001E", "B19013_001E", "B25077_001E", "B25064_001E", "B25
                 "B15003_001E", "B15003_022E", "B15003_023E", "B15003_024E", "B15003_025E"]
 
 SESSION = requests.Session()
-SESSION.headers["User-Agent"] = "Mozilla/5.0 (compatible; homescope-data/1.0)"
+SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+})
 OFFLINE = False
 
 
@@ -118,15 +124,22 @@ def fetch(name):
     return fail(name, last, required)
 
 
-def download(url, path):
+def download(url, path, tries=3):
     tmp = path.with_suffix(".part")
-    with SESSION.get(url, stream=True, timeout=300) as r:
-        r.raise_for_status()
-        with open(tmp, "wb") as f:
-            shutil.copyfileobj(r.raw, f)
-    if tmp.stat().st_size < 200:
-        raise ValueError("file looks empty")
-    tmp.replace(path)
+    for i in range(tries):
+        try:
+            with SESSION.get(url, stream=True, timeout=300) as r:
+                r.raise_for_status()
+                with open(tmp, "wb") as f:
+                    shutil.copyfileobj(r.raw, f)
+            if tmp.stat().st_size < 200:
+                raise ValueError("file looks empty")
+            tmp.replace(path)
+            return
+        except Exception:  # noqa: BLE001
+            if i == tries - 1:
+                raise
+            time.sleep(10 * (i + 1))
 
 
 def fail(name, why, required):
@@ -137,6 +150,40 @@ def fail(name, why, required):
 
 
 # ---------------------------------------------------------------- loaders
+
+def load_rates():
+    """Weekly 30- and 15-year mortgage rates: FRED first, Freddie Mac's own file as backup."""
+    p30 = fetch("rate30")
+    if p30:
+        p15 = fetch("rate15")
+        return load_fred(p30), (load_fred(p15) if p15 else None)
+    p = fetch("pmms")
+    if not p:
+        sys.exit("ERROR: no mortgage rate source could be downloaded")
+    df = pd.read_csv(p)
+    df.columns = [c.strip().lower() for c in df.columns]
+    df["date"] = pd.to_datetime(df["date"], format="mixed")
+    out = []
+    for col in ("pmms30", "pmms15"):
+        d = pd.DataFrame({"date": df["date"], "value": pd.to_numeric(df.get(col), errors="coerce")}).dropna()
+        out.append(d.reset_index(drop=True) if len(d) else None)
+    return out[0], out[1]
+
+
+def load_cpi():
+    """Monthly consumer price index: FRED first, BLS as backup."""
+    p = fetch("cpi")
+    if p:
+        return load_fred(p)
+    p = fetch("cpi_bls")
+    if not p:
+        sys.exit("ERROR: no inflation (CPI) source could be downloaded")
+    df = pd.read_csv(p, sep="\t", dtype=str)
+    df.columns = [c.strip() for c in df.columns]
+    df = df[(df["series_id"].str.strip() == "CUUR0000SA0") & df["period"].str.match(r"M(0[1-9]|1[0-2])")]
+    dates = pd.to_datetime(df["year"].str.strip() + "-" + df["period"].str[1:] + "-01")
+    return pd.DataFrame({"date": dates, "value": pd.to_numeric(df["value"], errors="coerce")}).dropna()
+
 
 def load_fred(path):
     df = pd.read_csv(path)
@@ -408,10 +455,8 @@ def main():
     asof = {}
 
     log("National series")
-    r30 = load_fred(fetch("rate30"))
-    r15p = fetch("rate15")
-    r15 = load_fred(r15p) if r15p else None
-    cpi = load_fred(fetch("cpi"))
+    r30, r15 = load_rates()
+    cpi = load_cpi()
     monthly30 = r30.set_index("date")["value"].resample("MS").mean()
     cpi_year = cpi.set_index("date")["value"].groupby(lambda d: d.year).mean()
     national = {
