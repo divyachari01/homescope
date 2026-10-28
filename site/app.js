@@ -240,6 +240,13 @@
       out.push(card(`${src.years[i]} president (${v ? "county" : "state"})`, `${m > 0 ? "R" : "D"} +${Math.abs(m).toFixed(0)}`,
         `R ${src.rep[i]}% &middot; D ${src.dem[i]}%` + (v && sv ? ` &middot; state ${sv.rep[sv.rep.length - 1] > sv.dem[sv.dem.length - 1] ? "R" : "D"} +${Math.abs(sv.rep[sv.rep.length - 1] - sv.dem[sv.dem.length - 1]).toFixed(0)}` : "")));
     }
+    if (work && rec.lat != null) {
+      const t = driveText(rec.lat, rec.lon);
+      out.push(card("Drive to work", t ? t.replace(" drive to work", "") : "...", "from the centre of this zip, without traffic"));
+      if (!t) fetchDrives([[rec.lat, rec.lon]]).then(ch => { if (ch && rec) renderSummary(inputs()); });
+    }
+    if (rec.jobs) out.push(card("Jobs in the county", rec.jobs.jobs_change != null ? signed(rec.jobs.jobs_change) : "n/a",
+      `over 5 years &middot; average pay ${money(rec.jobs.avg_pay)}`));
     if (rec.schools?.district) out.push(card("School district", `Grade ${rec.schools.district.grade}`, `${esc(rec.schools.district.name)}: test scores above ${Math.round(rec.schools.district.pct)}% of US districts`));
     const lean = lawLean(STATES[rec.state]?.law);
     if (lean) out.push(card("Landlord-tenant law", lean.label, esc(STATES[rec.state].name)));
@@ -570,6 +577,9 @@
           <tr><td>Population</td><td>${Math.round(a.pop).toLocaleString()}</td><td></td></tr>
           <tr><td>Typical year homes were built</td><td>${a.year_built || "n/a"}</td><td></td></tr>
           ${ind.crime != null ? `<tr><td>${crimeName()} per 100k (county)</td><td>${Math.round(ind.crime)}</td><td></td></tr>` : ""}
+          ${a.broadband != null ? `<tr><td>Homes with broadband internet</td><td>${pct(a.broadband, 0)}</td><td></td></tr>` : ""}
+          ${rec.jobs ? `<tr><td>Jobs in the county</td><td>${Math.round(rec.jobs.jobs).toLocaleString()}</td><td>${signed(rec.jobs.jobs_change)} since</td></tr>
+          <tr><td>Average pay in the county</td><td>${money(rec.jobs.avg_pay)}</td><td></td></tr>` : ""}
           ${STATES[rec.state]?.car_insurance ? `<tr><td>Car insurance per car (state avg, 2024)</td><td>${money(STATES[rec.state].car_insurance)}/yr</td><td></td></tr>` : ""}
         </table>
         <div>
@@ -628,6 +638,20 @@
     const user = h.split(".")[0], repo = location.pathname.split("/")[1] || `${user}.github.io`;
     return `https://github.com/${user}/${repo}/edit/main/${file}`;
   }
+  const WALK = [["grocery", "grocery"], ["park", "park"], ["transit", "bus/train stop"], ["pharmacy", "pharmacy"], ["food", "cafe or restaurant"], ["school", "school"]];
+  function walkLine(near) {
+    if (!near) return "";
+    const have = WALK.filter(([key]) => near[key]?.n > 0);
+    return `<div class="note">10-min walk: ${have.length} of 6 (${have.map(([, l]) => l).join(", ") || "none"})</div>`;
+  }
+  function noiseLine(nz) {
+    if (!nz) return "";
+    const f = [];
+    if (nz.highway_m != null && nz.highway_m < 300) f.push(`highway ${nz.highway_m} m away`);
+    if (nz.rail_m != null && nz.rail_m < 250) f.push(`railway ${nz.rail_m} m away`);
+    if (nz.airport_km != null && nz.airport_km < 5) f.push(`${esc(nz.airport || "airport")} ${nz.airport_km} km away`);
+    return f.length ? `<div class="note"><b>Noise:</b> ${f.join(", ")}</div>` : `<div class="note">No highway, railway or major airport close by</div>`;
+  }
   function facingRating(f) {
     if (!f) return null;
     if (["N", "E", "NE"].includes(f)) return ["good", "Vaastu-favoured facing"];
@@ -665,7 +689,8 @@
     });
     const groups = ["All", ...new Set(all.map(r => r.group))];
     const rows = all.filter(r => (listFilter === "All" || r.group === listFilter) && (!onlyAfford || r.fits)
-      && (!vaastuOnly || (r.vr && r.vr[0] === "good")));
+      && (!vaastuOnly || (r.vr && r.vr[0] === "good"))
+      && (!maxDrive || !work || (drive.get(keyOf(r.s.latitude, r.s.longitude)) ?? 1e9) <= maxDrive));
     const sorters = { price: (a, b) => a.s.price - b.s.price, cash: (a, b) => (b.inv?.cashFlow ?? -1e9) - (a.inv?.cashFlow ?? -1e9),
       fit: (a, b) => (b.fits - a.fits) || a.s.price - b.s.price, newest: (a, b) => (a.s.daysOnMarket ?? 1e9) - (b.s.daysOnMarket ?? 1e9),
       vaastu: (a, b) => (b.fits - a.fits) || (b.vScore - a.vScore) || a.s.price - b.s.price };
@@ -680,6 +705,7 @@
       <div class="row">
         <label class="note"><input type="checkbox" id="onlyAfford" ${onlyAfford ? "checked" : ""}> Only homes I can afford</label>
         <label class="note"><input type="checkbox" id="vaastuOnly" ${vaastuOnly ? "checked" : ""}> Only Vaastu-favoured facing (north, east, north-east)</label>
+        ${work ? `<label class="note">Drive to work <select id="maxDrive">${[[0, "any"], [15, "15 min or less"], [30, "30 min or less"], [45, "45 min or less"]].map(([v, l]) => `<option value="${v}" ${v === maxDrive ? "selected" : ""}>${l}</option>`).join("")}</select></label>` : `<span class="note">Add a work address under Your numbers to see drive times.</span>`}
       </div>
       <div class="chips" id="chips">${groups.map(g => `<button type="button" class="${g === listFilter ? "on" : ""}" data-g="${esc(g)}">${esc(g)}</button>`).join("")}</div>
       <div class="row"><label class="note">Sort <select id="listSort">
@@ -692,6 +718,8 @@
         <div class="note">${esc(r.group)} &middot; ${r.tier}${r.s.squareFootage >= 5000 ? " &middot; Large (5,000+ sq ft)" : ""}</div>
         <div class="note">${r.s.bedrooms ?? "?"} bd &middot; ${r.s.bathrooms ?? "?"} ba${r.s.squareFootage ? ` &middot; ${r.s.squareFootage.toLocaleString()} sq ft` : ""}${r.s.yearBuilt ? ` &middot; built ${r.s.yearBuilt}` : ""}${r.s.daysOnMarket != null ? ` &middot; ${r.s.daysOnMarket} days listed` : ""}</div>
         <div>Owner cost ${money(r.pay)}/mo${r.s.hoa ? ` (incl. HOA ${money(r.s.hoa)})` : ""}</div>
+        ${work && r.s.latitude ? `<div><b>${driveText(r.s.latitude, r.s.longitude) || "Drive time loading..."}</b></div>` : ""}
+        ${walkLine(r.s.near)}${noiseLine(r.s.noise)}
         ${investor && r.inv ? `<div class="note">If rented at ~${money(r.estRent)}: cash flow ${money(r.inv.cashFlow)}/mo, cap rate ${pct(r.inv.capRate, 1)}</div>` : ""}
         ${r.f ? `<div style="margin-top:4px">Faces <b>${DIR_NAMES[r.f]}</b>${r.s.orient.street ? ` onto ${esc(r.s.orient.street)}` : ""}. Vaastu ${scorePill(r.vs?.pct)} <span class="note">(from ${r.vs?.checks || 0} of 8 checks)</span></div>
           <div class="note">${r.vr[1]}. ${FACING_LIGHT[r.f]}${r.s.orient.tjunction ? " <b>Feng Shui:</b> a street ends pointing at this house (T-junction)." : ""}${r.s.orient.corner ? " Corner lot." : ""}</div>` : ""}
@@ -705,6 +733,11 @@
     $("#listSort").onchange = e => { listSort = e.target.value; renderListings(inputs()); };
     $("#onlyAfford").onchange = e => { onlyAfford = e.target.checked; renderListings(inputs()); };
     $("#vaastuOnly").onchange = e => { vaastuOnly = e.target.checked; renderListings(inputs()); };
+    if ($("#maxDrive")) $("#maxDrive").onchange = e => { maxDrive = +e.target.value; renderListings(inputs()); };
+    if (work) {
+      const pts = sale.filter(x => x.latitude).map(x => [x.latitude, x.longitude]);
+      fetchDrives(pts).then(changed => { if (changed && listing && listing.zip === zip) renderListings(inputs()); });
+    }
     el.querySelectorAll("[data-short]").forEach(b => b.onclick = () => {
       const s = sale.find(x => (x.id || x.formattedAddress) === b.dataset.short);
       if (s) toggleShortlist(s);
@@ -833,6 +866,45 @@
   }
   const scorePill = v => v == null ? "" : `<span class="${v >= 70 ? "pill" : "pill warn"}">${v}%</span>`;
 
+  // ---------------------------------------------------------------- commute (OpenStreetMap geocoding + OSRM routing)
+  let work = null;
+  try { work = JSON.parse(localStorage.getItem("hc-work") || "null"); } catch (e) { /* ignore */ }
+  const drive = new Map();                       // "lat,lon" -> minutes (null while unknown)
+  let maxDrive = 0;
+  const keyOf = (lat, lon) => `${(+lat).toFixed(5)},${(+lon).toFixed(5)}`;
+  async function setWork(q) {
+    $("#workStatus").textContent = "Looking up the address...";
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=${encodeURIComponent(q)}`);
+      const j = await r.json();
+      if (!j.length) { $("#workStatus").textContent = "Couldn't find that address. Try adding the city and state."; return; }
+      work = { q, lat: +j[0].lat, lon: +j[0].lon, label: j[0].display_name };
+      try { localStorage.setItem("hc-work", JSON.stringify(work)); } catch (e) { /* ignore */ }
+      drive.clear();
+      showWork(); if (rec) renderAll();
+    } catch (e) { $("#workStatus").textContent = "The address lookup service didn't respond; try again in a minute."; }
+  }
+  function showWork() {
+    if (!work) return;
+    $("#workAddr").value = work.q;
+    $("#workStatus").innerHTML = `Drive times are to: ${esc(work.label)}. <button type="button" class="link" id="workClear">Clear</button>`;
+    $("#workClear").onclick = () => { work = null; drive.clear(); try { localStorage.removeItem("hc-work"); } catch (e) { /* ignore */ } $("#workStatus").textContent = ""; $("#workAddr").value = ""; if (rec) renderAll(); };
+  }
+  // Drive minutes from many points to work in one request (OSRM table service, no traffic).
+  async function fetchDrives(points) {
+    const todo = points.filter(p => !drive.has(keyOf(p[0], p[1]))).slice(0, 90);
+    if (!work || !todo.length) return false;
+    todo.forEach(p => drive.set(keyOf(p[0], p[1]), null));
+    const coords = [[work.lat, work.lon], ...todo].map(p => `${p[1]},${p[0]}`).join(";");
+    try {
+      const r = await fetch(`https://router.project-osrm.org/table/v1/driving/${coords}?sources=${todo.map((_, i) => i + 1).join(";")}&destinations=0`);
+      const j = await r.json();
+      (j.durations || []).forEach((row, i) => drive.set(keyOf(todo[i][0], todo[i][1]), row[0] != null ? Math.round(row[0] / 60) : null));
+      return true;
+    } catch (e) { todo.forEach(p => drive.set(keyOf(p[0], p[1]), -1)); return true; }
+  }
+  const driveText = (lat, lon) => { const m = drive.get(keyOf(lat, lon)); return m == null ? "" : m < 0 ? "drive time unavailable" : `${m} min drive to work`; };
+
   // ---------------------------------------------------------------- shortlist (saved in this browser)
   let shortlist = {};
   try { shortlist = JSON.parse(localStorage.getItem("hc-shortlist") || "{}"); } catch (e) { /* ignore */ }
@@ -959,12 +1031,15 @@
     $("#sources").innerHTML = `Data rebuilt ${NAT.built}. Sources: Freddie Mac mortgage rates (${a.rates || ""}), Federal Reserve Bank of New York, Zillow Research (${a.zillow_values || ""}),
       FHFA house price index (through ${a.fhfa || ""}), US Census Bureau ACS (${a.acs || ""}; this product uses the Census Bureau Data API but is not endorsed or certified by the Census Bureau), BLS, FEMA National Risk Index,
       ${a.market_source || "Realtor.com"} Economic Research, County Health Rankings &amp; Roadmaps, MIT Election Data and Science Lab, Stanford Education Data Archive, Urban Institute Education Data Portal, NAIC,
-      street data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), listings from Realtor.com.
+      street, place and routing data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL) via Overpass, Nominatim and OSRM, county jobs from Census County Business Patterns, listings from Realtor.com.
       <br>&copy; 2026 Divya Chari. Code licensed under <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/" target="_blank" rel="noopener">PolyForm Noncommercial 1.0.0</a>; see the project's NOTICE for third-party terms.
       Provided as is, for information only: not financial, legal or real estate advice.`;
   }
 
   // ---------------------------------------------------------------- events
+  $("#workSet").addEventListener("click", () => { const q = $("#workAddr").value.trim(); if (q) setWork(q); });
+  $("#workAddr").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); const q = e.target.value.trim(); if (q) setWork(q); } });
+  showWork();
   $("#lookup").addEventListener("submit", e => { e.preventDefault(); saveInputs(); lookup(); });
   // Start loading as soon as the first 3 digits are typed; open the zip automatically at 5 digits.
   $("#zip").addEventListener("input", e => {

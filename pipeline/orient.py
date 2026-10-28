@@ -19,30 +19,105 @@ ROADS = "residential|unclassified|tertiary|secondary|primary|living_street|trunk
 DIRS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
 
 
-def fetch_streets(points, pad=0.004):
-    """All named/through streets in the box around the points, as lists of (lat, lon)."""
-    lats = [p[0] for p in points]
-    lons = [p[1] for p in points]
-    bbox = f"{min(lats) - pad},{min(lons) - pad},{max(lats) + pad},{max(lons) + pad}"
-    q = f'[out:json][timeout:90];way["highway"~"^({ROADS})$"]({bbox});out geom;'
+POI = {   # what counts as "within a 10-minute walk" (800 m)
+    "grocery": lambda t: t.get("shop") in ("supermarket", "grocery", "greengrocer"),
+    "park": lambda t: t.get("leisure") == "park",
+    "transit": lambda t: t.get("highway") == "bus_stop" or t.get("railway") in ("station", "tram_stop", "halt")
+    or t.get("public_transport") == "station",
+    "pharmacy": lambda t: t.get("amenity") == "pharmacy",
+    "food": lambda t: t.get("amenity") in ("cafe", "restaurant"),
+    "school": lambda t: t.get("amenity") == "school",
+}
+
+
+def overpass(q):
     last = None
     for attempt in range(6):                     # public servers are often busy: retry and rotate
         try:
-            r = requests.post(OVERPASS[attempt % len(OVERPASS)], data={"data": q}, timeout=180,
+            r = requests.post(OVERPASS[attempt % len(OVERPASS)], data={"data": q}, timeout=240,
                               headers={"User-Agent": "homescope (github.com, house orientation)"})
             r.raise_for_status()
-            break
+            return r.json().get("elements", [])
         except requests.RequestException as e:
             last = e
             time.sleep(15)
-    else:
-        raise last
-    ways = []
-    for el in r.json().get("elements", []):
+    raise last
+
+
+def fetch_area(points, pad=0.01):
+    """Streets, everyday places, and noise sources (highways, railways, airports) around the points."""
+    lats = [p[0] for p in points]
+    lons = [p[1] for p in points]
+    bbox = f"{min(lats) - pad},{min(lons) - pad},{max(lats) + pad},{max(lons) + pad}"
+    big = f"{min(lats) - 0.06},{min(lons) - 0.08},{max(lats) + 0.06},{max(lons) + 0.08}"
+    q = (f'[out:json][timeout:180];way["highway"~"^({ROADS})$"]({bbox});out geom;'
+         f'(nwr["shop"~"^(supermarket|grocery|greengrocer)$"]({bbox});nwr["leisure"="park"]({bbox});'
+         f'node["highway"="bus_stop"]({bbox});nwr["railway"~"^(station|tram_stop|halt)$"]({bbox});'
+         f'nwr["amenity"~"^(pharmacy|cafe|restaurant|school)$"]({bbox}););out center;'
+         f'(way["highway"~"^(motorway|trunk)$"]({bbox});way["railway"="rail"]["service"!~"."]({bbox}););out geom;'
+         f'nwr["aeroway"="aerodrome"]["iata"]({big});out center;')
+    ways, places, noise, airports = [], {k: [] for k in POI}, {"highway": [], "rail": []}, []
+    for el in overpass(q):
+        t = el.get("tags", {})
         geom = [(g["lat"], g["lon"]) for g in el.get("geometry", [])]
-        if len(geom) >= 2:
-            ways.append({"id": el["id"], "name": el.get("tags", {}).get("name", ""), "pts": geom})
-    return ways
+        if t.get("aeroway") == "aerodrome":
+            c = el.get("center") or {"lat": el.get("lat"), "lon": el.get("lon")}
+            airports.append((c["lat"], c["lon"], t.get("name", "")))
+        elif t.get("highway") in ("motorway", "trunk") and len(geom) >= 2:
+            noise["highway"].append(geom)
+        elif t.get("railway") == "rail" and len(geom) >= 2:
+            noise["rail"].append(geom)
+        elif "highway" in t and len(geom) >= 2 and t.get("highway") != "bus_stop":
+            ways.append({"id": el["id"], "name": t.get("name", ""), "pts": geom})
+        else:
+            c = el.get("center") or ({"lat": el["lat"], "lon": el["lon"]} if "lat" in el else None)
+            if c:
+                for k, test in POI.items():
+                    if test(t):
+                        places[k].append((c["lat"], c["lon"]))
+    return ways, places, noise, airports
+
+
+def fetch_streets(points, pad=0.004):
+    """Streets only (kept for compatibility)."""
+    return fetch_area(points, pad)[0]
+
+
+def _dist_m(a, b):
+    dy = (a[0] - b[0]) * 110540
+    dx = (a[1] - b[1]) * 111320 * math.cos(math.radians(a[0]))
+    return math.hypot(dx, dy)
+
+
+def _line_dist(lat, lon, lines):
+    p = _xy(lat, lon, lat)
+    best = None
+    for g in lines:
+        pts = [_xy(a, b, lat) for a, b in g]
+        for a, b in zip(pts, pts[1:]):
+            d = _nearest_on_segment(p, a, b)[1]
+            best = d if best is None or d < best else best
+    return best
+
+
+def surroundings(lat, lon, places, noise, airports, walk_m=800):
+    """Everyday places within a 10-minute walk, and nearby noise sources."""
+    near = {}
+    for k, pts in places.items():
+        ds = [_dist_m((lat, lon), q) for q in pts]
+        within = [d for d in ds if d <= walk_m]
+        near[k] = {"n": len(within), "m": round(min(ds)) if ds else None}
+    nz = {}
+    hw = _line_dist(lat, lon, noise["highway"])
+    rl = _line_dist(lat, lon, noise["rail"])
+    if hw is not None:
+        nz["highway_m"] = round(hw)
+    if rl is not None:
+        nz["rail_m"] = round(rl)
+    if airports:
+        d, name = min((_dist_m((lat, lon), (a[0], a[1])), a[2]) for a in airports)
+        nz["airport_km"], nz["airport"] = round(d / 1000, 1), name
+    return near, nz
 
 
 def _xy(lat, lon, lat0):
@@ -110,12 +185,14 @@ def orient(lat, lon, ways, max_dist=80):
 
 
 def add_orientation(listings):
-    """Add 'orient' to every listing with coordinates (one map request per zip)."""
+    """Add 'orient' (facing), 'near' (walkable places) and 'noise' to every listing with coordinates.
+    One map request per zip."""
     pts = [(x["latitude"], x["longitude"]) for x in listings if x.get("latitude") and x.get("longitude")]
     if not pts:
         return
-    ways = fetch_streets(pts)
+    ways, places, noise, airports = fetch_area(pts)
     for x in listings:
         if x.get("latitude") and x.get("longitude"):
             o = orient(x["latitude"], x["longitude"], ways)
             x["orient"] = o or {}
+            x["near"], x["noise"] = surroundings(x["latitude"], x["longitude"], places, noise, airports)

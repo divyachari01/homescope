@@ -101,6 +101,7 @@ ACS_VARS = {
     "B17001_001E": "pov_total", "B17001_002E": "pov", "B23025_003E": "labor", "B23025_005E": "unemployed",
     "B15003_001E": "edu_total", "B15003_022E": "ba", "B15003_023E": "ma", "B15003_024E": "prof", "B15003_025E": "phd",
     "B25103_001E": "re_tax", "B25035_001E": "year_built",
+    "B28002_001E": "net_total", "B28002_004E": "broadband",
     "B25024_001E": "units", "B25024_002E": "u1d", "B25024_003E": "u1a", "B25024_004E": "u2", "B25024_005E": "u34",
     "B25024_006E": "u59", "B25024_007E": "u1019", "B25024_008E": "u2049", "B25024_009E": "u50", "B25024_010E": "umobile",
 }
@@ -433,6 +434,41 @@ def load_elections_github():
     return pack(el, "fips"), pack(el, "state")
 
 
+def load_cbp(year):
+    """County Business Patterns: jobs and yearly payroll per county (cached). None if unavailable."""
+    path = RAW / f"cbp_{year}.csv"
+    if not path.exists():
+        if OFFLINE:
+            return None
+        key = os.environ.get("CENSUS_API_KEY", "")
+        params = {"get": "EMP,PAYANN", "for": "county:*", **({"key": key} if key else {})}
+        r = SESSION.get(f"https://api.census.gov/data/{year}/cbp", params=params, timeout=300)
+        try:
+            rows = r.json()
+        except ValueError:
+            return None
+        pd.DataFrame(rows[1:], columns=rows[0]).to_csv(path, index=False)
+    df = pd.read_csv(path, dtype=str)
+    df["fips"] = df["state"].str.zfill(2) + df["county"].str.zfill(3)
+    for c in ("EMP", "PAYANN"):
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    return df.set_index("fips")[["EMP", "PAYANN"]]
+
+
+def load_jobs():
+    """County jobs now, change over 5 years, and average pay (County Business Patterns)."""
+    for y in range(dt.date.today().year - 2, dt.date.today().year - 6, -1):
+        new = load_cbp(y)
+        if new is not None and len(new):
+            old = load_cbp(y - 5)
+            out = pd.DataFrame({"jobs": new["EMP"], "avg_pay": new["PAYANN"] * 1000 / new["EMP"]})
+            if old is not None:
+                out["jobs_change"] = (new["EMP"] / old["EMP"].reindex(new.index) - 1) * 100
+            out["year"] = y
+            return out.replace([np.inf, -np.inf], np.nan)
+    return None
+
+
 def load_chr(path):
     """County Health Rankings analytic file -> {county fips: (violent crime per 100k, release year)}."""
     df = pd.read_csv(path, dtype=str, low_memory=False)
@@ -651,6 +687,7 @@ def main():
     d["renter_share"] = a["renters"] / a["occupied"] * 100
     d["rent_vacancy"] = a["for_rent_vacant"] / (a["renters"] + a["for_rent_vacant"]) * 100
     d["poverty"] = a["pov"] / a["pov_total"] * 100
+    d["broadband"] = a["broadband"] / a["net_total"] * 100
     d["unemployment"] = a["unemployed"] / a["labor"] * 100
     d["college"] = (a["ba"] + a["ma"] + a["prof"] + a["phd"]) / a["edu_total"] * 100
     d["tax_rate"] = (a["re_tax"] / a["home_value"] * 100).where(lambda s: s.between(0.05, 5))
@@ -748,6 +785,13 @@ def main():
     except Exception as e:  # noqa: BLE001
         log(f"  WARNING: Fed rate skipped: {e!r}")
 
+    jobs = None
+    try:
+        jobs = load_jobs()
+        if jobs is not None:
+            asof["jobs"] = f"County Business Patterns {int(jobs['year'].iloc[0])}"
+    except Exception as e:  # noqa: BLE001
+        log(f"  WARNING: county jobs skipped: {e!r}")
     schools = near = dgrades = None
     try:
         if OFFLINE and not (RAW / "schools_dir.json").exists():
@@ -825,6 +869,7 @@ def main():
                 "pop": row["pop"], "income": row["income"], "home_value": row["home_value"], "rent": row["rent"],
                 "renter_share": dr["renter_share"], "rent_vacancy": dr["rent_vacancy"], "poverty": dr["poverty"],
                 "unemployment": dr["unemployment"], "college": dr["college"], "tax_rate": dr["tax_rate"],
+                "broadband": dr["broadband"],
                 "year_built": row["year_built"],
                 "mix": {"Single-family detached": row["u1d"], "Townhouse / attached": row["u1a"],
                         "2-4 units": row["u2"] + row["u34"], "5-19 units": row["u59"] + row["u1019"],
@@ -867,6 +912,9 @@ def main():
                 rec["market"]["year_ago"] = {k: round(float(p0[k]), 3) for k in sub.columns
                                              if k not in ("zip", "month") and pd.notna(p0[k])}
                 rec["market"]["year_ago"]["label"] = extras.market_label(p0)
+        if jobs is not None and rec.get("county_fips") in jobs.index:
+            j = jobs.loc[rec["county_fips"]]
+            rec["jobs"] = {k: (round(float(j[k]), 1) if pd.notna(j[k]) else None) for k in ("jobs", "avg_pay", "jobs_change")}
         if near and z in near:
             rows_ = []
             for dist_mi, i in near[z]:

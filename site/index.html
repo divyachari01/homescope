@@ -39,6 +39,11 @@
       <label>Loan length (years)<select data-k="years"><option>30</option><option>15</option></select></label>
       <label>Interest rate % <small id="rateHint" class="muted"></small><input data-k="rate" type="number" step="0.05" placeholder="current"></label>
     </div>
+    <div class="grid-inputs" style="grid-template-columns:1fr">
+      <label>Work or school address, for drive times <small class="muted">(looked up with OpenStreetMap's free services; kept only in this browser)</small>
+        <span class="row"><input id="workAddr" type="text" placeholder="e.g. 140 W 18th Ave, Columbus, OH" style="flex:1"><button type="button" id="workSet">Set</button></span></label>
+      <div id="workStatus" class="note"></div>
+    </div>
     <details class="sub">
       <summary>More assumptions</summary>
       <div class="grid-inputs">
