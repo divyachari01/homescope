@@ -746,6 +746,9 @@
 
 
 
+  // Crime level from the county rate per 100k (US averages: about 6 homicides, about 380 violent crimes).
+  const crimeLevel = v => { if (!Number.isFinite(v)) return null; const t = crimeName() === "Homicides" ? [3, 7, 12] : [200, 400, 700];
+    return v < t[0] ? "low" : v < t[1] ? "moderate" : v < t[2] ? "high" : "very high"; };
   const facingRatingText = f => ["N", "E", "NE"].includes(f) ? "favoured in Vaastu" : f === "SW" ? "least favoured" : ["S", "SE"].includes(f) ? "not ideal" : "acceptable";
   // ---------------------------------------------------------------- deal check for one house
   let deal = null;                               // { id, zip, base: listing row, full: property record, state }
@@ -877,12 +880,13 @@
           <p class="note">County assessments often run below market value; the land share is what matters.</p>` : ""}
       </details>
 
-      <details class="sub"><summary>Condition, structure and risks</summary>
+      <details class="sub"><summary>Condition, structure, crime and risks</summary>
         ${d.facts.length ? `<p class="note"><b>From the listing record:</b> ${d.facts.map(esc).join("; ")}.</p>` : ""}
         ${d.build.length ? `<p class="note"><b>Built with / on:</b> ${d.build.join(", ")}.</p>` : ""}
         ${d.good.length ? `<p class="note"><b>Updates mentioned:</b> ${d.good.join(", ")}. Ask for dates, permits and receipts.</p>` : ""}
         ${d.bad.length ? `<p class="note"><b>Watch-outs mentioned:</b> ${d.bad.join(", ")}.</p>` : ""}
         ${s.yearBuilt ? `<ul class="note tight">${ageFlags(s.yearBuilt).map(f => `<li>${f}</li>`).join("")}</ul>` : ""}
+        ${rec.ind?.crime != null ? `<p class="note"><b>Crime (county):</b> ${crimeLevel(rec.ind.crime)}, ${rec.ind.crime.toFixed(1)} ${crimeName().toLowerCase()} per 100,000 people a year${rec.pct?.crime != null ? `, higher than ${Math.round(rec.pct.crime)}% of US zips` : ""}. Check the city police department's crime map for the street.</p>` : ""}
         ${hz ? `<p class="note"><b>Natural hazards (FEMA, this zip):</b> ${hz.label || ""}${(hz.top || []).length ? `; highest: ${hz.top.slice(0, 3).map(([n, , lab]) => `${esc(n.toLowerCase())} (${(lab || "").toLowerCase()})`).join(", ")}` : ""}.
           ${hz.loss_rate != null ? ` Expected damage averages about ${money(d.offer * hz.loss_rate / 100)} a year at this price.` : ""}</p>` : ""}
         <p class="note">Roof, wiring and foundation condition only come from an inspection.</p>
@@ -1338,6 +1342,7 @@
     if (parts.commute >= 80) why.push([true, `${mins} min to work`]);
     if (parts.vaastu >= 80) why.push([true, "Vaastu-friendly facing"]);
     if (s.hoa > 400) why.push([false, `HOA ${money(s.hoa)}/mo`]);
+    if (["high", "very high"].includes(crimeLevel(h.p.crime))) why.push([false, `${crimeLevel(h.p.crime)[0].toUpperCase() + crimeLevel(h.p.crime).slice(1)} crime in the county`]);
     return { d, parts, score, verdict, why: why.slice(0, 3), mins };
   }
 
@@ -1390,6 +1395,7 @@
         ${Number.isFinite(medOf("school")) ? `<span>Schools <b>${Math.round(medOf("school"))}/10</b></span>` : ""}
         ${hz.length ? `<span>Disaster risk <b>${esc(mode(hz).replace("Relatively ", "").toLowerCase())}</b></span>` : ""}
         ${Number.isFinite(medOf("growth")) ? `<span>Population <b>${signed(medOf("growth"))}/yr</b></span>` : ""}
+        ${Number.isFinite(medOf("crime")) ? `<span title="${crimeName()} per 100,000 people a year, county level">Crime <b>${crimeLevel(medOf("crime"))}</b> (${medOf("crime").toFixed(1)} ${crimeName().toLowerCase()} per 100k, county)</span>` : ""}
       </div>
       <div class="row">${homesCtx.zips.filter(p => p.here).slice(0, 8).map(p => `<button type="button" class="chipbtn" data-report="${p.zip}">Area report: ${p.zip}</button>`).join("")}</div>`;
     $("#areaStrip").querySelectorAll("[data-report]").forEach(b => b.onclick = () => openReport(b.dataset.report));
