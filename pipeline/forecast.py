@@ -31,7 +31,10 @@ LABELS = {
     "growth_10y": "Price trend, 10 yrs", "volatility": "How bumpy prices have been",
     "price_to_income": "Price vs local income", "rent_to_value": "Rent vs price",
     "log_income": "Household income", "income_growth": "Income growth", "rent_growth": "Rent growth",
-    "stocks_1y": "Stock market, last year", "stocks_5y": "Stock market, 5-yr trend", "college": "College-educated share",
+    "stocks_1y": "Stock market, last year", "fed_rate": "Fed interest rate", "fed_change_1y": "Fed rate change, 1 yr",
+    "mkt_dom": "Days homes take to sell", "mkt_sale_to_list": "Sale vs asking price", "mkt_above_list": "Share sold above asking",
+    "mkt_price_drops": "Share of listings with price cuts", "mkt_months_supply": "Months of supply (buyer/seller market)",
+    "hazard_risk": "Natural hazard risk", "hazard_loss": "Expected hazard losses", "stocks_5y": "Stock market, 5-yr trend", "college": "College-educated share",
     "college_change": "Change in college share", "poverty": "Poverty rate", "unemployment": "Unemployment",
     "renter_share": "Share of renters", "rent_vacancy": "Empty rentals", "log_pop": "Population",
     "pop_growth": "Population growth", "rate": "Mortgage rate", "rate_change_1y": "Rate change, 1 yr",
@@ -62,7 +65,7 @@ def combined_prices(fh_wide, zhvi_year):
     return pd.DataFrame(out, index=zips, columns=years)
 
 
-def features(P, y, acs, macro, votes, static):
+def features(P, y, acs, macro, votes, static, market):
     """One row per zip describing it as of year y, using only what was known then."""
     f = pd.DataFrame(index=P.index)
     p0 = P[y]
@@ -98,6 +101,12 @@ def features(P, y, acs, macro, votes, static):
     f["rate"] = m("rate", y)
     f["rate_change_1y"] = m("rate", y) - m("rate", y - 1)
     f["rate_change_3y"] = m("rate", y) - m("rate", y - 3)
+    f["fed_rate"] = m("fed", y)
+    f["fed_change_1y"] = m("fed", y) - m("fed", y - 1)
+    mk = market.get(y)
+    if mk is not None:
+        for col in mk.columns:
+            f[f"mkt_{col}"] = mk[col].reindex(f.index)
     f["stocks_1y"] = m("stocks", y) / m("stocks", y - 1) - 1
     f["stocks_5y"] = (m("stocks", y) / m("stocks", y - 5)) ** 0.2 - 1
     if y - 1 in P.columns:
@@ -119,7 +128,7 @@ def fit(X, y, q):
     return m.fit(X, y)
 
 
-def run(P, acs, macro, votes, static, log=print):
+def run(P, acs, macro, votes, static, market, log=print):
     """Train, test and predict. Returns (per-zip forecasts, model summary)."""
     P = P.dropna(how="all")
     now = max(P.columns)                                    # latest (possibly partial) year
@@ -127,7 +136,7 @@ def run(P, acs, macro, votes, static, log=print):
     rows = {}
     for y in range(FIRST_ORIGIN, now + 1):
         if y in P.columns:
-            rows[y] = features(P, y, acs, macro, votes, static)
+            rows[y] = features(P, y, acs, macro, votes, static, market)
 
     def dataset(h, origins, latest_target=last_full):
         Xs, ys = [], []

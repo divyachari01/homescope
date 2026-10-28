@@ -14,6 +14,7 @@ Optional environment variable:
     CENSUS_API_KEY   free key from https://api.census.gov/data/key_signup.html
 """
 import argparse
+import hashlib
 import datetime as dt
 import json
 import os
@@ -26,6 +27,7 @@ import numpy as np
 import pandas as pd
 import requests
 
+import extras
 import forecast
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -54,6 +56,17 @@ SOURCES = {
                  "https://www.fhfa.gov/hpi/download/annually/hpi_at_bdl_zip5.xlsx"], "fhfa_zip5.xlsx", True, 14),
     "zip_county": ("https://www2.census.gov/geo/docs/maps-data/data/rel2020/zcta520/tab20_zcta520_county20_natl.txt",
                    "zcta_county.txt", True, 180),
+    "gazetteer": ("https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2020_Gazetteer/2020_Gaz_zcta_national.zip",
+                  "gazetteer.zip", False, 365),
+    "zip_tract": ("https://www2.census.gov/geo/docs/maps-data/data/rel2020/zcta520/tab20_zcta520_tract20_natl.txt",
+                  "zcta_tract.txt", False, 365),
+    "nri": (["https://hazards.fema.gov/nri/Content/StaticDocuments/DataDownload//NRI_Table_CensusTracts/NRI_Table_CensusTracts.zip",
+             "https://hazards.fema.gov/nri/Content/StaticDocuments/DataDownload/NRI_Table_CensusTracts/NRI_Table_CensusTracts.zip"],
+            "nri_tracts.zip", False, 90),
+    "redfin": ("https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_market_tracker/zip_code_market_tracker.tsv000.gz",
+               "redfin_zip.tsv.gz", False, 7),
+    "fed": ("https://markets.newyorkfed.org/api/rates/unsecured/effr/search.json?startDate=2000-07-03&endDate="
+            + dt.date.today().isoformat(), "effr.json", False, 1),
     "chr": ([f"https://www.countyhealthrankings.org/sites/default/files/media/document/analytic_data{y}{s}.csv"
              for y in (2026, 2025, 2024) for s in ("", "_v2", "_0")], "chr.csv", False, 30),
 }
@@ -129,6 +142,7 @@ def download(url, path, tries=3):
         try:
             with SESSION.get(url, stream=True, timeout=300) as r:
                 r.raise_for_status()
+                r.raw.decode_content = True          # unpack gzip-encoded responses (e.g. census.gov)
                 with open(tmp, "wb") as f:
                     shutil.copyfileobj(r.raw, f)
             if tmp.stat().st_size < 200:
@@ -254,9 +268,23 @@ def census_get(year, variables, extra=None):
     return pd.DataFrame(rows[1:], columns=rows[0])
 
 
+def acs_cache_path(year, variables):
+    return RAW / f"acs_{year}_{hashlib.md5(','.join(variables).encode()).hexdigest()[:8]}.csv"
+
+
+def census_group_meta(year, group):
+    """Variable labels of one Census table (cached), used to read the utility-bill brackets."""
+    path = RAW / f"acs_meta_{year}_{group}.json"
+    if not path.exists() and not OFFLINE:
+        r = SESSION.get(f"https://api.census.gov/data/{year}/acs/acs5/groups/{group}.json", timeout=120)
+        r.raise_for_status()
+        path.write_text(r.text)
+    return json.loads(path.read_text())
+
+
 def load_acs(year, variables):
     """ACS 5-year table for all ZCTAs, cached in raw/. Returns None if not published."""
-    path = RAW / f"acs_{year}_{len(variables)}.csv"
+    path = acs_cache_path(year, variables)
     if path.exists() and (OFFLINE or time.time() - path.stat().st_mtime < 30 * 86400):
         return clean_acs(pd.read_csv(path, dtype={"zip": str}), variables)
     if OFFLINE:
@@ -390,7 +418,7 @@ def laws_table():
     return pd.read_csv(STATE_TABLE, dtype=str).fillna("")
 
 
-def run_forecast(fh_wide, zhvi_year, acs_year, r30, zip_county, county_votes, laws, crime):
+def run_forecast(fh_wide, zhvi_year, acs_year, r30, zip_county, county_votes, laws, crime, fed, market, hazard):
     """Collect the inputs the forecast model needs and run it. Returns per-zip results."""
     P = forecast.combined_prices(fh_wide, zhvi_year)
     acs = {}
@@ -401,6 +429,7 @@ def run_forecast(fh_wide, zhvi_year, acs_year, r30, zip_county, county_votes, la
     macro = pd.DataFrame({"rate": r30.set_index("date")["value"].groupby(lambda d: d.year).mean()})
     sp = load_stocks()
     macro["stocks"] = sp if sp is not None else np.nan
+    macro["fed"] = fed.groupby(fed.index.year).mean() if fed is not None else np.nan
     macro = macro.to_dict()
 
     county_of = {z: c[0] for z, c in zip_county.items()}
@@ -433,8 +462,11 @@ def run_forecast(fh_wide, zhvi_year, acs_year, r30, zip_county, county_votes, la
         rows[z] = {"state": int(c[:2]), "rent_control": lw[0], "just_cause": lw[1], "notice_days": lw[2],
                    "car_insurance": lw[3], "crime": crime.get(c, np.nan)}
     static = pd.DataFrame.from_dict(rows, orient="index")
+    if hazard is not None:
+        static["hazard_risk"] = hazard["risk"].reindex(static.index)
+        static["hazard_loss"] = hazard["loss_rate"].reindex(static.index)
 
-    preds, past, summary = forecast.run(P, acs, macro, votes, static, log=log)
+    preds, past, summary = forecast.run(P, acs, macro, votes, static, market or {}, log=log)
     fc = {}
     for h, df in preds.items():
         for z, r in df.round(1).iterrows():
@@ -597,17 +629,55 @@ def main():
             else:
                 gent[z] = "Lower-income, no gentrification signs"
 
+    # ---------- extra zip data: utilities, surrounding area, hazards, market, Fed rate (all optional)
+    log("Extra data")
+    util = ring = hazard = mk = mk_year = fed = None
+    points = pd.DataFrame(columns=["lat", "lon"])
+    try:
+        be = extras.bracket_vars(census_group_meta(acs_year, "B25132"))   # electricity
+        bg = extras.bracket_vars(census_group_meta(acs_year, "B25133"))   # gas
+        ut = load_acs(acs_year, sorted(be) + sorted(bg)).set_index("zip")
+        util = pd.DataFrame({"electric": extras.bracket_mean(ut, be), "gas": extras.bracket_mean(ut, bg)})
+    except Exception as e:  # noqa: BLE001
+        log(f"  WARNING: utility bills skipped: {e!r}")
+    try:
+        points = extras.zip_points(fetch("gazetteer"))
+        vals = pd.DataFrame({"income": a["income"], "poverty": d["poverty"], "renter_share": d["renter_share"],
+                             "growth10": d.get("growth10"), "crime": d["crime"], "college": d["college"]})
+        ring, ring_n = extras.surrounding(points, vals, a["pop"])
+        ring["n"] = ring_n
+    except Exception as e:  # noqa: BLE001
+        log(f"  WARNING: surrounding-area comparison skipped: {e!r}")
+    try:
+        hazard = extras.hazards_by_zip(fetch("nri"), fetch("zip_tract"))
+        asof["hazards"] = "FEMA National Risk Index"
+    except Exception as e:  # noqa: BLE001
+        log(f"  WARNING: natural hazards skipped: {e!r}")
+    try:
+        mk = extras.redfin_market(fetch("redfin"))
+        mk_year = extras.market_by_year(mk)
+        asof["market"] = str(mk["month"].max())
+    except Exception as e:  # noqa: BLE001
+        log(f"  WARNING: buyer/seller market skipped: {e!r}")
+    try:
+        fed = extras.fed_funds(fetch("fed"))
+        national["fed"] = {"start": fed.index[0].strftime("%Y-%m"), "v": [round(x, 2) for x in fed]}
+        asof["fed"] = fed.index[-1].strftime("%Y-%m")
+    except Exception as e:  # noqa: BLE001
+        log(f"  WARNING: Fed rate skipped: {e!r}")
+
     # ---------- machine-learning forecast (skipped with a warning if anything goes wrong)
     fc, bt = {}, {}
     try:
         log("Forecast model")
         fc, bt, national["model"] = run_forecast(fh_wide, zhvi_year, acs_year, r30, zip_county,
-                                                 county_votes, laws_table(), crime)
+                                                 county_votes, laws_table(), crime, fed, mk_year, hazard)
     except Exception as e:  # noqa: BLE001
         log(f"  WARNING: forecast skipped: {e!r}")
 
     # ---------- write zip shards
     log("Writing zip files")
+    mk_index = {z: g.sort_values("month") for z, g in mk.groupby("zip")} if mk is not None else {}
     zips = sorted(set(d.index) | set(zall.index) | set(fh_wide.index))
     zips = [z for z in zips if len(z) == 5 and z.isdigit()]
     shards = {}
@@ -664,6 +734,32 @@ def main():
                            "price_to_income", "rent_yield", "growth10", "crime")
                           if k in dr and pd.notna(dr[k])}
             rec["pct"] = {k: pct.loc[z, k] for k in pct.columns if pd.notna(pct.loc[z, k])}
+        if z in points.index:
+            rec["lat"], rec["lon"] = round(float(points.loc[z, "lat"]), 4), round(float(points.loc[z, "lon"]), 4)
+        if util is not None and z in util.index and util.loc[z].notna().any():
+            rec["util"] = {k: round(float(v)) for k, v in util.loc[z].items() if pd.notna(v)}
+        if ring is not None and z in ring.index and ring.loc[z, "n"] > 0:
+            rec["ring"] = {k: round(float(v), 2) for k, v in ring.loc[z].items() if pd.notna(v)}
+        if hazard is not None and z in hazard.index:
+            hz = hazard.loc[z]
+            per = sorted(((extras.HAZARDS[c], float(hz[c])) for c in extras.HAZARDS if c in hz and pd.notna(hz[c])),
+                         key=lambda t: -t[1])
+            rec["hazard"] = {"risk": round(float(hz["risk"]), 1) if pd.notna(hz["risk"]) else None,
+                             "label": extras.hazard_label(float(hz["risk"])),
+                             "loss_rate": round(float(hz["loss_rate"]), 3) if pd.notna(hz["loss_rate"]) else None,
+                             "top": [[n, round(v, 1), extras.hazard_label(v)] for n, v in per[:6]]}
+        if mk is not None and z in mk_index:
+            sub = mk_index[z]
+            last = sub.iloc[-1].to_dict()
+            prev = sub[sub["month"] <= sub["month"].iloc[-1] - 12]
+            rec["market"] = {"month": str(last["month"]), "label": extras.market_label(last),
+                             **{k: round(float(last[k]), 3) for k in sub.columns
+                                if k not in ("zip", "month") and pd.notna(last[k])}}
+            if len(prev):
+                p0 = prev.iloc[-1].to_dict()
+                rec["market"]["year_ago"] = {k: round(float(p0[k]), 3) for k in sub.columns
+                                             if k not in ("zip", "month") and pd.notna(p0[k])}
+                rec["market"]["year_ago"]["label"] = extras.market_label(p0)
         if z in gent:
             rec["gent"] = gent[z]
         fips = rec.get("county_fips")
