@@ -322,7 +322,7 @@
     if (rec.gent) more.push(card("Neighborhood change", rec.gent.replace("Signs of gentrification", "Gentrifying"), "10-year Census comparison"));
     $("#s-summary").innerHTML = out.join("");
     $("#s-more").innerHTML = more.join("");
-    hint("h-hood", [rec.acs?.income ? `median income ${money(rec.acs.income)}` : "", rec.gent || ""].filter(Boolean).join(", "));
+    hint("h-hood", [rec.acs?.income ? `median income ${money(rec.acs.income)}` : "", rec.jobs?.jobs_change != null ? `jobs ${signed(rec.jobs.jobs_change)} in 5 yrs` : ""].filter(Boolean).join(", "));
   }
 
   // ---------------------------------------------------------------- prices
