@@ -10,3 +10,68 @@ Crime and elections
   elections from the GitHub backup
 Computing indicators
 Extra data
+  WARNING: skipping nri: 403 Client Error: Forbidden for url: https://www.fema.gov:443/emergency-managers/practitioners/resilience-analysis-and-planning-tool
+  WARNING: skipping redfin: 403 Client Error: Forbidden for url: https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_market_tracker/zip_code_market_tracker.tsv000.gz
+/home/runner/work/homescope/homescope/pipeline/build_data.py:469: DtypeWarning: Columns (7,16,25) have mixed types. Specify dtype option on import or set low_memory=False.
+  df = pd.read_csv(path, dtype={"area_fips": str, "own_code": str, "agglvl_code": str})
+  schools: 102178 in directory
+Population and building growth
+  downloaded ACS 2012
+  downloaded ACS 2013
+  downloaded ACS 2014
+  downloaded ACS 2015
+  downloaded ACS 2016
+  downloaded ACS 2017
+  downloaded ACS 2018
+  downloaded ACS 2019
+  downloaded ACS 2020
+  downloaded ACS 2021
+  downloaded ACS 2022
+  downloaded ACS 2023
+  downloaded ACS 2024
+  permits: US total 1,431,616 units in 2025 (expect ~1.4M)
+  growth for 33971 zips; permits loaded
+Forecast model
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+  1-yr test 2021->2022: model off by 5.08 pts/yr, trend-only off by 9.76, actual inside range 58.3%
+  1-yr test 2022->2023: model off by 5.69 pts/yr, trend-only off by 5.95, actual inside range 51.1%
+  1-yr test 2023->2024: model off by 4.2 pts/yr, trend-only off by 5.02, actual inside range 79.2%
+  1-yr test 2024->2025: model off by 4.18 pts/yr, trend-only off by 5.55, actual inside range 71.7%
+  1-yr test 2025->2026: model off by 2.97 pts/yr, trend-only off by 5.0, actual inside range 81.1%
+  3-yr test 2019->2022: model off by 5.95 pts/yr, trend-only off by 8.22, actual inside range 10.1%
+  3-yr test 2020->2023: model off by 6.16 pts/yr, trend-only off by 7.6, actual inside range 12.8%
+  3-yr test 2021->2024: model off by 4.51 pts/yr, trend-only off by 4.72, actual inside range 28.8%
+  3-yr test 2022->2025: model off by 3.94 pts/yr, trend-only off by 3.99, actual inside range 41.5%
+  3-yr test 2023->2026: model off by 4.36 pts/yr, trend-only off by 4.11, actual inside range 18.5%
+  5-yr test 2019->2024: model off by 4.29 pts/yr, trend-only off by 6.26, actual inside range 17.8%
+  5-yr test 2020->2025: model off by 4.17 pts/yr, trend-only off by 5.29, actual inside range 19.9%
+  5-yr test 2021->2026: model off by 2.65 pts/yr, trend-only off by 3.48, actual inside range 42.9%
+Writing zip files
+  city search table: 26203 zips
+  search pages: 33834 addresses in the sitemap
+Done: 33785 zip codes in 894 files. Sources as of: {'rates': '2026-10-22', 'zillow_values': '2026-09', 'zillow_rents': '2026-09', 'zillow_forecast_base': '2026-09-30', 'fhfa': 2025, 'acs': '2020-2024', 'acs_old': '2010-2014', 'crime': 'County Health Rankings 2025, homicides', 'elections': 2024, 'hazards': 'FEMA National Risk Index', 'market': '2026-09', 'market_source': 'Realtor.com', 'fed': '2026-10', 'jobs': 'BLS QCEW 2026 Q1', 'schools': 'SEDA 2025.1 (2025)', 'permits': 2025, 'population': 'ACS 5-year 2012-2024'}
