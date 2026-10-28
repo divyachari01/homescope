@@ -50,7 +50,8 @@ SOURCES = {
     "zhvi_top": (f"{ZILLOW}/zhvi/Zip_zhvi_uc_sfrcondo_tier_0.67_1.0_sm_sa_month.csv", "zhvi_top.csv", False, 3),
     "zori":    (f"{ZILLOW}/zori/Zip_zori_uc_sfrcondomfr_sm_month.csv", "zori.csv", False, 3),
     "zhvf":    (f"{ZILLOW}/zhvf_growth/Zip_zhvf_growth_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv", "zhvf.csv", False, 3),
-    "fhfa":    ("https://www.fhfa.gov/hpi/download/annually/hpi_at_bdl_zip5.xlsx", "fhfa_zip5.xlsx", True, 14),
+    "fhfa":    (["https://www.fhfa.gov/hpi/download/annual/hpi_at_zip5.xlsx",
+                 "https://www.fhfa.gov/hpi/download/annually/hpi_at_bdl_zip5.xlsx"], "fhfa_zip5.xlsx", True, 14),
     "zip_county": ("https://www2.census.gov/geo/docs/maps-data/data/rel2020/zcta520/tab20_zcta520_county20_natl.txt",
                    "zcta_county.txt", True, 180),
     "chr": ([f"https://www.countyhealthrankings.org/sites/default/files/media/document/analytic_data{y}{s}.csv"
