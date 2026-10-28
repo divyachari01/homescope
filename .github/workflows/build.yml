@@ -49,7 +49,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [ -d listings ]; then
             git add listings logs/listings.txt
-            git diff --cached --quiet || (git commit -m "Update listings" && git pull --rebase -q && git push) || echo "Could not save listings to the repo this time"
+            git diff --cached --quiet || (git commit -m "Update listings" && git pull --rebase --autostash -q && git push) || echo "Could not save listings to the repo this time"
           fi
 
       - name: Build data
@@ -65,7 +65,7 @@ jobs:
         run: |
           mkdir -p logs && cp build-log.txt logs/last-build.txt 2>/dev/null || true
           git add logs
-          git diff --cached --quiet || (git commit -m "Build log" && git pull --rebase -q && git push)
+          git diff --cached --quiet || (git commit -m "Build log" && git pull --rebase --autostash -q && git push) || echo "could not save the build log"
 
       - uses: actions/upload-pages-artifact@v3
         with:

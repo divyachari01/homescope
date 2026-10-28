@@ -456,6 +456,47 @@ def load_cbp(year):
     return df.set_index("fips")[["EMP", "PAYANN"]]
 
 
+def load_qcew(year, qtr):
+    """BLS Quarterly Census of Employment and Wages, all industries, every county (cached)."""
+    path = RAW / f"qcew_{year}_{qtr}.csv"
+    if not path.exists() and not OFFLINE:
+        r = SESSION.get(f"https://data.bls.gov/cew/data/api/{year}/{qtr}/industry/10.csv", timeout=300)
+        if r.status_code != 200 or "area_fips" not in r.text[:300]:
+            return None
+        path.write_text(r.text)
+    if not path.exists():
+        return None
+    df = pd.read_csv(path, dtype={"area_fips": str, "own_code": str, "agglvl_code": str})
+    df = df[(df["own_code"] == "0") & (df["agglvl_code"] == "70")]     # all owners, county totals
+    df = df.set_index(df["area_fips"].str.zfill(5))
+    return pd.DataFrame({"EMP": pd.to_numeric(df["month3_emplvl"], errors="coerce"),
+                         "WAGE": pd.to_numeric(df["avg_wkly_wage"], errors="coerce")})
+
+
+def load_jobs_qcew():
+    """County jobs from the newest QCEW quarter, the change from the same quarter 5 years earlier,
+    and average pay. Much fresher than County Business Patterns (about 6 months behind)."""
+    today = dt.date.today()
+    for back in range(0, 6):
+        q = (today.month - 1) // 3 + 1 - back
+        y = today.year + (q - 1) // 4
+        q = (q - 1) % 4 + 1
+        try:
+            new = load_qcew(y, q)
+        except Exception:  # noqa: BLE001
+            new = None
+        if new is None or new["EMP"].sum() == 0:
+            continue
+        old = load_qcew(y - 5, q)
+        out = pd.DataFrame({"jobs": new["EMP"], "avg_pay": new["WAGE"] * 52})
+        if old is not None:
+            out["jobs_change"] = (new["EMP"] / old["EMP"].reindex(new.index) - 1) * 100
+        out["year"] = y
+        out["label"] = f"BLS QCEW {y} Q{q}"
+        return out.replace([np.inf, -np.inf], np.nan)
+    return None
+
+
 def load_jobs():
     """County jobs now, change over 5 years, and average pay (County Business Patterns)."""
     for y in range(dt.date.today().year - 2, dt.date.today().year - 6, -1):
@@ -828,16 +869,25 @@ def main():
 
     jobs = None
     try:
-        jobs = load_jobs()
+        jobs = load_jobs_qcew()
         if jobs is not None:
-            asof["jobs"] = f"County Business Patterns {int(jobs['year'].iloc[0])}"
+            asof["jobs"] = jobs["label"].iloc[0]
+        else:
+            log("  QCEW unavailable, using County Business Patterns")
+            jobs = load_jobs()
+            if jobs is not None:
+                asof["jobs"] = f"County Business Patterns {int(jobs['year'].iloc[0])}"
     except Exception as e:  # noqa: BLE001
         log(f"  WARNING: county jobs skipped: {e!r}")
     schools = near = dgrades = None
     try:
         if OFFLINE and not (RAW / "schools_dir.json").exists():
             raise FileNotFoundError("no school directory in raw/")
-        sdir = extras.urban_all(SESSION, f"{extras.URBAN}/schools/ccd/directory/2023/", RAW / "schools_dir.json")
+        try:
+            sdir = extras.urban_all(SESSION, f"{extras.URBAN}/schools/ccd/directory/2024/", RAW / "schools_dir_2024.json")
+        except Exception as e:  # noqa: BLE001
+            log(f"  school directory 2024 failed ({e!r}); using 2023")
+            sdir = extras.urban_all(SESSION, f"{extras.URBAN}/schools/ccd/directory/2023/", RAW / "schools_dir.json")
         sdir["ncessch"] = sdir["ncessch"].astype(str).str.zfill(12)
         sdir["leaid"] = sdir["leaid"].astype(str).str.zfill(7)
         try:
@@ -1053,6 +1103,25 @@ def main():
     (OUT / "zips").mkdir(parents=True)
     for prefix, recs in shards.items():
         (OUT / "zips" / f"{prefix}.json").write_text(json.dumps(recs, separators=(",", ":")))
+
+    # ---------- one small table of every zip, for searching by city name
+    def num(x, nd=0):
+        return None if x is None or (isinstance(x, float) and not np.isfinite(x)) else round(float(x), nd) if nd else int(round(float(x)))
+    rows = []
+    for recs in shards.values():
+        for z, r in recs.items():
+            if r.get("lat") is None or not r.get("city"):
+                continue
+            sd = (r.get("schools") or {}).get("district") or {}
+            rows.append([z, r.get("city"), r.get("state"), round(r["lat"], 3), round(r["lon"], 3),
+                         num((r.get("zhvi_now") or {}).get("all") or (r.get("acs") or {}).get("home_value")),
+                         num(r.get("zori_now") or (r.get("acs") or {}).get("rent")),
+                         num((r.get("acs") or {}).get("tax_rate"), 2), sd.get("n10"),
+                         num((r.get("growth") or {}).get("rate"), 1), (r.get("hazard") or {}).get("label"),
+                         (r.get("market") or {}).get("label"), num(((r.get("fc") or {}).get("1") or [None, None])[1], 1)])
+    (OUT / "places.json").write_text(json.dumps({"cols": ["zip", "city", "state", "lat", "lon", "value", "rent", "tax",
+        "school", "growth", "hazard", "market", "fc1"], "rows": rows}, separators=(",", ":")))
+    log(f"  city search table: {len(rows)} zips")
 
     # ---------- plain pages for search engines (one per zip and state) and the sitemap
     try:

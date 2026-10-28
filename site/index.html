@@ -20,9 +20,9 @@
 <header class="top">
   <div class="wrap">
     <h1>HomeScope</h1>
-    <p class="tag">Look up any US zip code before you buy.</p>
+    <p class="tag">Look up any US city or zip code before you buy.</p>
     <form id="lookup" class="lookup" autocomplete="off">
-      <input id="zip" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" placeholder="Zip code" aria-label="Zip code" required>
+      <input id="zip" placeholder="City or zip, e.g. Cupertino" aria-label="City or zip code" required>
       <select id="purpose" aria-label="What is the home for?">
         <option value="live">To live in</option>
         <option value="rent">As a rental investment</option>
@@ -82,6 +82,7 @@
   </details>
 
   <p id="status" class="status" role="status"></p>
+  <section id="s-city" hidden></section>
 
   <main id="results" hidden>
     <section id="s-head"></section>

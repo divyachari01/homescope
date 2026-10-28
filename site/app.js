@@ -143,15 +143,17 @@
     }
     $("#rateHint").textContent = `(blank = ${NAT.rate30_latest.value}% from ${NAT.rate30_latest.date})`;
     renderSources();
-    const q = new URLSearchParams(location.search).get("zip");
+    const q = new URLSearchParams(location.search).get("zip") || new URLSearchParams(location.search).get("city");
     let last = null;
     try { last = localStorage.getItem("hc-zip"); } catch (e) { /* ignore */ }
     if (q || last) { $("#zip").value = q || last; lookup(); }
   }
 
   async function lookup() {
-    zip = $("#zip").value.trim();
-    if (!/^\d{5}$/.test(zip)) { $("#status").textContent = "Enter a 5-digit zip code."; return; }
+    const q = $("#zip").value.trim();
+    if (!/^\d{5}$/.test(q)) { if (q.length >= 2) return citySearch(q); $("#status").textContent = "Enter a city or a 5-digit zip code."; return; }
+    zip = q;
+    $("#s-city").hidden = true;
     $("#status").textContent = "Loading...";
     try {
       const shard = await getShard(zip.slice(0, 3));
@@ -1319,11 +1321,74 @@
   function renderSources() {
     const a = NAT.asof || {};
     $("#sources").innerHTML = `Data rebuilt ${NAT.built}. Sources: Freddie Mac mortgage rates (${a.rates || ""}), Federal Reserve Bank of New York, Zillow Research (${a.zillow_values || ""}),
-      FHFA house price index (through ${a.fhfa || ""}), Census Building Permits Survey, US Census Bureau ACS (${a.acs || ""}; this product uses the Census Bureau Data API but is not endorsed or certified by the Census Bureau), BLS, FEMA National Risk Index,
+      FHFA house price index (through ${a.fhfa || ""}), Census Building Permits Survey, BLS Quarterly Census of Employment and Wages, US Census Bureau ACS (${a.acs || ""}; this product uses the Census Bureau Data API but is not endorsed or certified by the Census Bureau), BLS, FEMA National Risk Index,
       ${a.market_source || "Realtor.com"} Economic Research, County Health Rankings &amp; Roadmaps, MIT Election Data and Science Lab, Stanford Education Data Archive, Urban Institute Education Data Portal, NAIC,
       street, place and routing data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL) via Overpass, Nominatim and OSRM, county jobs from Census County Business Patterns, listings, recent sales and value estimates (Quantarium, Collateral Analytics, Cotality) from Realtor.com.
       <br>&copy; 2026 Divya Chari. Code licensed under <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/" target="_blank" rel="noopener">PolyForm Noncommercial 1.0.0</a>; see the project's NOTICE for third-party terms.
       Provided as is, for information only: not financial, legal or real estate advice.`;
+  }
+
+  // ---------------------------------------------------------------- search by city
+  let PLACES = null;
+  const loadPlaces = () => PLACES || (PLACES = getJSON("data/places.json").then(j => j.rows.map(r => Object.fromEntries(j.cols.map((c, i) => [c, r[i]])))).catch(e => { PLACES = null; throw e; }));
+  const norm = t => t.toLowerCase().replace(/^st\.? /, "saint ").replace(/[^a-z ]/g, "").trim();
+  let cityState = null, citySort = "value";
+  async function citySearch(q, st) {
+    $("#status").textContent = "Searching...";
+    let places;
+    try { places = await loadPlaces(); } catch (e) { $("#status").textContent = "City search isn't available yet."; return; }
+    const m = q.match(/^(.*?)(?:,\s*([a-z]{2}))?\s*$/i), name = norm(m[1]), wantSt = (st || m[2] || "").toUpperCase();
+    let hits = places.filter(p => norm(p.city) === name);
+    if (!hits.length) hits = places.filter(p => norm(p.city).startsWith(name));
+    if (wantSt) hits = hits.filter(p => p.state === wantSt);
+    const states = [...new Set(hits.map(p => p.state))];
+    if (!hits.length) { $("#status").textContent = `No city called "${q}" found. Try a nearby city or a zip code.`; return; }
+    if (states.length > 1) {
+      $("#status").textContent = "";
+      $("#results").hidden = true;
+      $("#s-city").hidden = false;
+      $("#s-city").innerHTML = `<h2>Which ${esc(hits[0].city)}?</h2><div class="chips">${states.sort().map(x => `<button type="button" data-st="${x}">${esc(hits.find(p => p.state === x).city)}, ${x}</button>`).join("")}</div>`;
+      $("#s-city").querySelectorAll("[data-st]").forEach(b => b.onclick = () => citySearch(q.replace(/,.*$/, ""), b.dataset.st));
+      return;
+    }
+    cityState = { q, st: states[0], hits };
+    history.replaceState(null, "", `?city=${encodeURIComponent(`${hits[0].city}, ${states[0]}`)}`);
+    renderCity();
+  }
+  function renderCity() {
+    const { hits, st } = cityState;
+    const lat = hits.reduce((a, p) => a + p.lat, 0) / hits.length, lon = hits.reduce((a, p) => a + p.lon, 0) / hits.length;
+    const mi = p => 69 * Math.hypot(p.lat - lat, (p.lon - lon) * Math.cos(lat * Math.PI / 180));
+    loadPlaces().then(all => {
+      const inCity = new Set(hits.map(p => p.zip));
+      const list = all.filter(p => inCity.has(p.zip) || mi(p) <= 10).map(p => ({ ...p, mi: mi(p), here: inCity.has(p.zip) }));
+      // what you can afford in each zip, using its own tax rate and its state's insurance and closing costs
+      const base = inputs();
+      list.forEach(p => {
+        const s = STATES[p.state] || {}, ins = s.home_ins ? s.home_ins / 4000 : 0.5, tax = p.tax || 1.1;
+        const o = { ...base, taxRate: tax, insRate: ins, closingPct: (s.closing_fees ?? 1) + 1 + ins + tax / 4 };
+        p.max = Calc.maxPrice(o).price; p.fits = p.value && p.value <= p.max;
+      });
+      const sorters = { value: (a, b) => (a.value || 9e9) - (b.value || 9e9), school: (a, b) => (b.school || 0) - (a.school || 0),
+        growth: (a, b) => (b.growth ?? -99) - (a.growth ?? -99), near: (a, b) => a.mi - b.mi };
+      list.sort((a, b) => (b.here - a.here) || sorters[citySort](a, b));
+      const nFit = list.filter(p => p.fits).length;
+      $("#status").textContent = "";
+      $("#results").hidden = true;
+      $("#s-city").hidden = false;
+      $("#s-city").innerHTML = `<h2>${esc(hits[0].city)}, ${st}: ${hits.length} zip code${hits.length > 1 ? "s" : ""}, plus ${list.length - hits.length} within 10 miles</h2>
+        <p class="verdict"><b>${nFit}</b> of ${list.length} have a typical home within your budget. Tap a row for the full report.</p>
+        <div class="row"><label class="note">Sort <select id="citySort">${[["value", "Cheapest first"], ["school", "Best schools"], ["growth", "Fastest growing"], ["near", "Closest"]].map(([v, l]) => `<option value="${v}" ${v === citySort ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
+        <div class="table-wrap"><table><tr><th>Zip</th><th>Typical home</th><th>You can afford</th><th>Rent</th><th>Schools</th><th>Growth</th><th>Next year</th><th>Hazard risk</th><th>Market</th><th>Miles</th></tr>
+          ${list.map(p => `<tr data-zip="${p.zip}"${p.here ? ' class="best"' : ""}><td><b>${p.zip}</b> ${esc(p.city)}</td><td>${p.value ? k(p.value) : "n/a"}</td>
+            <td>${p.fits ? '<span class="pill">Yes</span>' : `<span class="pill warn">${k(p.max)}</span>`}</td><td>${p.rent ? money(p.rent) : ""}</td>
+            <td>${p.school ? p.school + "/10" : ""}</td><td>${p.growth != null ? signed(p.growth) : ""}</td><td>${p.fc1 != null ? signed(p.fc1) : ""}</td>
+            <td>${esc(p.hazard || "")}</td><td>${esc((p.market || "").replace(" market", ""))}</td><td>${p.mi.toFixed(1)}</td></tr>`).join("")}
+        </table></div>
+        <p class="note">Highlighted rows are in ${esc(hits[0].city)}. "You can afford" uses your numbers with each zip's own tax rate.</p>`;
+      $("#citySort").onchange = e => { citySort = e.target.value; renderCity(); };
+      $("#s-city").querySelectorAll("tr[data-zip]").forEach(tr => tr.onclick = () => { $("#zip").value = tr.dataset.zip; lookup(); window.scrollTo(0, 0); });
+    });
   }
 
   // ---------------------------------------------------------------- events
@@ -1333,9 +1398,10 @@
   $("#lookup").addEventListener("submit", e => { e.preventDefault(); saveInputs(); lookup(); });
   // Start loading as soon as the first 3 digits are typed; open the zip automatically at 5 digits.
   $("#zip").addEventListener("input", e => {
-    const v = e.target.value.replace(/\D/g, "");
-    if (v.length >= 3) getShard(v.slice(0, 3)).catch(() => {});
-    if (v.length === 5 && v !== zip) lookup();
+    const v = e.target.value.trim();
+    if (/^\d{3,5}$/.test(v)) getShard(v.slice(0, 3)).catch(() => {});
+    if (/^\d{5}$/.test(v) && v !== zip) lookup();
+    if (/^[a-z]/i.test(v)) loadPlaces();               // a city name: get the search table ready
   });
   let typingTimer = null;
   const liveUpdate = () => { clearTimeout(typingTimer); typingTimer = setTimeout(() => { saveInputs(); if (rec) renderAll(); }, 350); };
