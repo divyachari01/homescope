@@ -3,7 +3,8 @@
 """Live listings for any zip, as a Vercel serverless function.
 
 GET /api/listings?zip=43201 returns the same JSON shape as listings/<zip>.json: homes for
-sale and for rent from Realtor.com (via HomeHarvest), plus homes sold in the last 6 months. The page adds each home's facing
+sale and for rent from Realtor.com (via HomeHarvest), plus homes sold in the last 6 months.
+GET /api/listings?address=... returns one property's record, listed or not. The page adds each home's facing
 direction, walkable places and noise from OpenStreetMap itself. Vercel's cache keeps each
 zip's answer for 6 hours, so repeat visits are instant.
 """
@@ -35,9 +36,25 @@ def build(zipcode):
         return out
 
 
+def home(address):
+    """One property by address, listed or not (for checking a house you found elsewhere)."""
+    from homeharvest import scrape_property
+    df = scrape_property(location=address)
+    rows = [fetch_listings.from_homeharvest(r) | {"zip": str(r.get("zip_code") or "")[:5], "status": r.get("status")}
+            for r in df.to_dict("records")]
+    return {"home": rows[0] if rows else None}
+
+
 class handler(BaseHTTPRequestHandler):  # noqa: N801  (name required by Vercel)
     def do_GET(self):
-        z = (parse_qs(urlparse(self.path).query).get("zip") or [""])[0].strip()
+        q = parse_qs(urlparse(self.path).query)
+        address = (q.get("address") or [""])[0].strip()
+        if address:
+            try:
+                return self.send(200, home(address[:200]), cache=True)
+            except Exception as e:  # noqa: BLE001
+                return self.send(502, {"error": f"lookup failed: {e}"}, cache=False)
+        z = (q.get("zip") or [""])[0].strip()
         if not (len(z) == 5 and z.isdigit()):
             return self.send(400, {"error": "give a 5-digit zip, e.g. ?zip=43201"}, cache=False)
         try:
