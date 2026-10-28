@@ -1238,7 +1238,7 @@
     try { r = (await getShard(z.slice(0, 3)))[z]; } catch (e) { /* none */ }
     if (!r) { $("#status").textContent = `No data for ${z}. It may be a PO box or business-only zip.`; return; }
     recs.set(z, r);
-    homesCtx = { label: `${z}${r.city ? " " + r.city : ""}`, st: r.state, zips: [{ ...placeFromRec(z, r), here: true, mi: 0 }], here: new Set([z]), mode: "zip" };
+    homesCtx = { view: null, label: `${z}${r.city ? " " + r.city : ""}`, st: r.state, zips: [{ ...placeFromRec(z, r), here: true, mi: 0 }], here: new Set([z]), mode: "zip" };
     showHomes(`?zip=${z}`, z);
   }
   async function citySearch(q, st) {
@@ -1262,7 +1262,7 @@
     const here = new Set(hits.map(p => p.zip));
     const zips = places.filter(p => here.has(p.zip) || mi(p) <= 10).map(p => ({ ...p, mi: mi(p), here: here.has(p.zip) }));
     const label = isCounty ? hits[0].county : hits[0].city;
-    homesCtx = { label, st: states[0], zips, here, mode: isCounty ? "county" : "city" };
+    homesCtx = { view: null, label, st: states[0], zips, here, mode: isCounty ? "county" : "city" };
     showHomes(`?city=${encodeURIComponent(`${label}, ${states[0]}`)}`, `${label}, ${states[0]}`);
   }
   async function houseSearch(q) {
@@ -1277,7 +1277,7 @@
     } catch (e) { $("#status").textContent = "Couldn't find that house. Try the full address with city, state and zip, or paste the listing link."; }
   }
   function showHomes(url, remember) {
-    F.shown = 24;
+    F.shown = 24; F.bounds = null; lastFit = "";
     document.body.classList.add("searched");
     $("#status").textContent = "";
     $("#results").hidden = true;
@@ -1289,13 +1289,14 @@
     renderShortlist();
   }
   function homeZips() {
+    if (homesCtx.view) return homesCtx.view;            // the zips the map is showing, once you've moved it
     const zs = homesCtx.zips.filter(p => p.here).slice(0, 8);
     if (F.nearby) zs.push(...homesCtx.zips.filter(p => !p.here).sort((a, b) => a.mi - b.mi).slice(0, 12));
     return zs;
   }
   let homesTimer = null;
   function homesChanged(z) {
-    if (!homesCtx || $("#v-homes").hidden || !homesCtx.zips.some(p => p.zip === z)) return;
+    if (!homesCtx || $("#v-homes").hidden || !(homesCtx.zips.some(p => p.zip === z) || (homesCtx.view || []).some(p => p.zip === z))) return;
     clearTimeout(homesTimer); homesTimer = setTimeout(renderHomes, 300);
   }
 
@@ -1366,8 +1367,9 @@
     const typeOf = s => LISTING_GROUPS[s.propertyType] || s.propertyType || "Other";
     const passes = h => (h.s.bedrooms ?? 0) >= F.beds && (h.s.bathrooms ?? 0) >= F.baths && (!F.sqft || (h.s.squareFootage ?? 0) >= F.sqft)
       && (F.type === "All" || typeOf(h.s) === F.type) && (!F.vaastu || ["N", "E", "NE"].includes(h.s.orient?.facing));
-    let shown = homes.filter(h => h.s.price <= cap && passes(h)), noneInBudget = false;
-    if (!shown.length && F.max == null && homes.length) { shown = homes.filter(passes); noneInBudget = true; }
+    const inMap = h => !F.bounds || (h.s.latitude && F.bounds.contains([h.s.longitude, h.s.latitude]));
+    let shown = homes.filter(h => h.s.price <= cap && passes(h) && inMap(h)), noneInBudget = false;
+    if (!shown.length && F.max == null && homes.length) { shown = homes.filter(h => passes(h) && inMap(h)); noneInBudget = true; }
     const ranks = { space: rankPct(shown.map(h => h.s.squareFootage)) };
     if (work) fetchDrives(shown.filter(h => h.s.latitude).map(h => [h.s.latitude, h.s.longitude])).then(ch => { if (ch) homesChanged(zs[0]?.zip); });
     for (const h of shown) h.j = judge(h, o, ranks);
@@ -1412,6 +1414,7 @@
       </details>
       <p class="note legend"><span style="color:#1f9d6b">&#9679;</span> good price <span style="color:#2f6fb5">&#9679;</span> fair <span style="color:#c4622d">&#9679;</span> priced high <span style="color:#9a9a9a">&#9679;</span> over budget or no estimate</p>
       <p class="verdict">${loading ? `<span class="note">Loading homes for ${loading} zip code${loading > 1 ? "s" : ""} (5-30 s the first time)... </span>` : ""}
+        ${homesCtx.tooWide ? `<span class="note">Showing the ${homesCtx.view.length} zip codes nearest the map's centre; zoom in to see the rest. </span>` : ""}
         ${loading && !homes.length ? "" : noneInBudget ? `Nothing within your budget of ${k(budget)} here. Cheapest homes shown.` : `<b>${shown.length}</b> home${shown.length === 1 ? "" : "s"}${shown.length ? ", best matches first" : ". Try fewer filters or a higher price"}.`}</p>`;
     const on = (id, f) => { const x = $("#" + id); if (x) x.onchange = e => { f(e.target); F.shown = 24; renderHomes(); }; };
     on("fMax", t => { F.max = Number(t.value) === budget ? null : Number(t.value); }); on("fBeds", t => { F.beds = Number(t.value); });
@@ -1468,6 +1471,7 @@
         });
         map.on("mouseenter", "homes-dot", () => { map.getCanvas().style.cursor = "pointer"; });
         map.on("mouseleave", "homes-dot", () => { map.getCanvas().style.cursor = ""; });
+        map.on("moveend", e => { if (e.originalEvent) onMapMove(); });
         mapReady = true; fitMap(pendingMap);
       });
     } else if (mapReady) {
@@ -1475,8 +1479,22 @@
       fitMap(fc);
     }
   }
+  // Moving the map searches the area it shows (up to the 15 zip codes nearest its centre).
+  async function onMapMove() {
+    if (!$("#mapFollow").checked || !homesCtx) return;
+    const b = map.getBounds(), c = map.getCenter();
+    let places;
+    try { places = await loadPlaces(); } catch (e) { return; }
+    const inView = places.filter(p => b.contains([p.lon, p.lat])).map(p => ({ ...p, here: homesCtx.here.has(p.zip),
+      mi: 69 * Math.hypot(p.lat - c.lat, (p.lon - c.lng) * Math.cos(c.lat * Math.PI / 180)) })).sort((x, y) => x.mi - y.mi);
+    if (!inView.length) return;
+    homesCtx.view = inView.slice(0, 15); homesCtx.tooWide = inView.length > 15;
+    F.bounds = b; F.shown = 24;
+    renderHomes();
+  }
   let lastFit = "";
   function fitMap(fc) {
+    if (F.bounds) return;                                    // you're steering the map; don't jump
     const key = homesCtx.label + homeZips().map(p => p.zip).join();
     if (key === lastFit || !fc.features.length) return;     // only re-centre when the place changes
     lastFit = key;
@@ -1538,6 +1556,7 @@
   $("#workAddr").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); const q = e.target.value.trim(); if (q) setWork(q); } });
   showWork();
   $("#lookup").addEventListener("submit", e => { e.preventDefault(); saveInputs(); lookup(); });
+  $("#mapFollow").addEventListener("change", e => { if (e.target.checked) onMapMove(); else { F.bounds = null; if (homesCtx) homesCtx.view = null; lastFit = ""; renderHomes(); } });
   document.querySelectorAll(".examples .ex").forEach(b => b.onclick = () => { $("#zip").value = b.dataset.q; lookup(); });
   // Start loading as soon as the first 3 digits are typed; open the zip automatically at 5 digits.
   $("#zip").addEventListener("input", e => {
