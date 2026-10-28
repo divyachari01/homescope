@@ -36,9 +36,11 @@ def build(zipcode):
         return out
 
 
-def home(address):
+def home(address, raw=False):
     """One property by address, listed or not (for checking a house you found elsewhere)."""
     from homeharvest import scrape_property
+    if raw:
+        return {"raw": scrape_property(location=address, return_type="raw")}
     df = scrape_property(location=address)
     rows = [fetch_listings.from_homeharvest(r) | {"zip": str(r.get("zip_code") or "")[:5], "status": r.get("status")}
             for r in df.to_dict("records")]
@@ -51,7 +53,7 @@ class handler(BaseHTTPRequestHandler):  # noqa: N801  (name required by Vercel)
         address = (q.get("address") or [""])[0].strip()
         if address:
             try:
-                return self.send(200, home(address[:200]), cache=True)
+                return self.send(200, home(address[:200], raw="raw" in q), cache=True)
             except Exception as e:  # noqa: BLE001
                 return self.send(502, {"error": f"lookup failed: {e}"}, cache=False)
         z = (q.get("zip") or [""])[0].strip()
