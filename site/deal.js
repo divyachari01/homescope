@@ -207,10 +207,11 @@ const Deal = (() => {
     const stl = comp.n >= 8 ? comp.stl : mk.sale_to_list ?? NaN;
     const zipDom = comp.n >= 8 ? comp.dom : mk.dom ?? NaN;
     const bt = backtest(sold, idx, today);
-    const rule = offerRule(L, F, stl, s.daysOnMarket, zipDom, bt.w ?? 0.2, bt.d ?? 0.97, bt.k ?? 1);
+    const rule = offerRule(L, F, stl, s.daysOnMarket, zipDom, bt.w ?? 0.1, bt.d ?? 0.97, bt.k ?? 1);
     const label = mk.label || (rule.m >= 1 ? "Seller's market" : rule.m < 0.97 ? "Buyer's market" : "Balanced");
     const hot = label === "Seller's market" || rule.m >= 1, soft = label === "Buyer's market" || rule.stale;
-    const opening = rule.offer * (hot ? 1 : soft ? 0.97 : 0.985);
+    if (!hot) rule.offer = Math.min(rule.offer, L);       // outside a seller's market, don't plan to pay over asking
+    const opening = Math.min(rule.offer * (hot ? 1 : soft ? 0.97 : 0.985), hot ? Infinity : L * 0.99);
     const walk = Math.min(Math.max(rule.offer, Number.isFinite(F) ? F : 0) * 1.03, ctx.maxPrice || Infinity);
     const gap = Number.isFinite(F) ? (L / F - 1) * 100 : NaN;
 

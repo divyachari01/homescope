@@ -253,7 +253,7 @@
     const place = [rec.city, rec.county, rec.state].filter(Boolean).join(", ");
     const mp = Calc.maxPrice(o), tp = targetPrice(o), bits = [];
     if (tp) bits.push(mp.price >= tp ? `You can afford the ${typeName()} here.` : `The ${typeName()} here is ${k(tp - mp.price)} over your budget.`);
-    if (rec.market?.label) bits.push(`${rec.market.label}${rec.market.dom ? `, homes take about ${Math.round(rec.market.dom)} days to sell` : ""}.`);
+    if (rec.market?.label) bits.push(`${rec.market.label.replace(/^Balanced$/, "Balanced market")}${rec.market.dom ? `, homes take about ${Math.round(rec.market.dom)} days to sell` : ""}.`);
     const risks = (rec.hazard?.top || []).filter(([, , lab]) => /very high|relatively high/i.test(lab || "")).slice(0, 2).map(([n]) => n.toLowerCase());
     if (risks.length) bits.push(`Main natural risks: ${risks.join(" and ")}.`);
     $("#s-head").innerHTML = `<h2>${zip}${place ? " &middot; " + esc(place) : ""}</h2>
@@ -278,9 +278,9 @@
     const mp = Calc.maxPrice(o);
     const tp = targetPrice(o);
     const where = rec.state || "this state";
-    out.push(card("You can afford up to", k(mp.price), `at ${o.ratePct}%. Your income allows ${k(mp.byPayment)}, your cash allows ${k(mp.byCash)}.
-      Cash covers ${o.downPct}% down + ${pct(o.closingPct)} closing${o.closingAuto ? ` (${where} fees and taxes ${pct(o.closingFees, 2)}, lender 1%, insurance and tax escrow)` : ""}.
-      Monthly includes ${pct(o.taxRate, 2)} property tax${o.insAuto ? ` and ${where} home insurance ${pct(o.insRate, 2)}` : ""}${o.hoa ? ` and ${money(o.hoa)} HOA` : ""}.`,
+    out.push(card("You can afford up to", k(mp.price), `at ${o.ratePct}%: income allows ${k(mp.byPayment)}, cash allows ${k(mp.byCash)}
+      <details class="sub"><summary>What's included</summary>Cash covers ${o.downPct}% down + ${pct(o.closingPct)} closing${o.closingAuto ? ` (${where} title, recording and transfer fees ${pct(o.closingFees, 2)}, lender about 1%, first-year insurance and tax escrow)` : ""}.
+      Monthly includes ${pct(o.taxRate, 2)} property tax${o.insAuto ? ` and ${where} average home insurance (${pct(o.insRate, 2)} of price)` : ""}${o.hoa ? ` and ${money(o.hoa)} HOA` : ""}.</details>`,
       tp ? (mp.price >= tp ? `<span class="pill">Covers the ${TYPES.find(t => t[0] === target.type)[1].toLowerCase()}</span>`
                           : `<span class="pill warn">${k(tp - mp.price)} short of the selected home</span>`) : ""));
     const ind = rec.ind || {}, p = rec.pct || {};
