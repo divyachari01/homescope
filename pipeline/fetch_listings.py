@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Pull for-sale and for-rent listings from RentCast for the zips in watchlist.txt.
+"""Pull homes for sale and for rent for the zips in watchlist.txt.
 
-Each zip costs 2 API calls (sale + rental). A zip is only refreshed when its saved
-listings are older than REFRESH_DAYS, so the daily site rebuild does not use up the
-free plan (50 calls a month). Results are saved in listings/<zip>.json.
+Listings come from Realtor.com through the free open-source HomeHarvest library (no key,
+refreshed daily). If that fails for a zip and a RENTCAST_API_KEY is set, RentCast is used as
+a backup, at most weekly and for a few zips so the free plan (50 calls a month) lasts.
+Results are saved in listings/<zip>.json, with each home's facing direction estimated from
+OpenStreetMap streets.
 
-It also looks up the property record (year built, roof / exterior / foundation type, tax
-assessments, property taxes, last sale) for each address in inspect.txt. Each address is
-looked up once and kept, using one call, and at most NEW_INSPECTIONS per run.
-
-Needs the environment variable RENTCAST_API_KEY. Without it the script does nothing.
+It also looks up the RentCast property record (year built, roof / exterior / foundation type,
+tax assessments, property taxes, last sale) for each address in inspect.txt. Each address is
+looked up once and kept, at most NEW_INSPECTIONS per run.
 """
 import datetime as dt
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -25,35 +26,76 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "listings"
 WATCHLIST = ROOT / "watchlist.txt"
 INSPECT = ROOT / "inspect.txt"
-API = "https://api.rentcast.io/v1/listings"
-REFRESH_DAYS = 6     # about weekly
-MAX_ZIPS = 5         # 5 zips x 2 calls x ~4 weeks = 40 calls, leaving room for house lookups
-NEW_INSPECTIONS = 3  # new addresses looked up per run (free plan: 50 calls a month in total)
+RENTCAST = "https://api.rentcast.io/v1/listings"
+MAX_ZIPS = 30            # zips pulled daily from Realtor.com
+RENTCAST_DAYS = 6        # backup source: refresh at most weekly ...
+RENTCAST_ZIPS = 5        # ... and for at most this many zips
+NEW_INSPECTIONS = 3      # new house lookups per run
 
-KEEP = ["id", "formattedAddress", "propertyType", "price", "bedrooms", "bathrooms", "squareFootage",
-        "lotSize", "yearBuilt", "daysOnMarket", "listedDate", "latitude", "longitude"]
+STYLE = [("SINGLE", "Single Family"), ("CONDO", "Condo"), ("COOP", "Condo"), ("TOWN", "Townhouse"),
+         ("MULTI", "Multi-Family"), ("DUPLEX", "Multi-Family"), ("LAND", "Land"), ("FARM", "Land"),
+         ("MOBILE", "Manufactured"), ("MANUFACTURED", "Manufactured"), ("APARTMENT", "Apartment")]
 
 
-def trim(item):
-    out = {k: item[k] for k in KEEP if item.get(k) is not None}
-    hoa = (item.get("hoa") or {}).get("fee")
-    if hoa:
-        out["hoa"] = hoa
+def num(v):
+    try:
+        v = float(v)
+        return None if math.isnan(v) else v
+    except (TypeError, ValueError):
+        return None
+
+
+def from_homeharvest(row):
+    """One HomeHarvest row -> the listing fields the site uses."""
+    g = lambda *keys: next((row.get(k) for k in keys if row.get(k) not in (None, "") and str(row.get(k)) != "nan"), None)  # noqa: E731
+    style = str(g("style", "property_type") or "").upper()
+    ptype = next((name for key, name in STYLE if key in style), style.title() or None)
+    addr = g("formatted_address")
+    if not addr:
+        street = " ".join(str(x) for x in (g("street"), g("unit")) if x)
+        addr = ", ".join(str(x) for x in (street, g("city"), f"{g('state') or ''} {g('zip_code') or ''}".strip()) if x)
+    full, half = num(g("full_baths")), num(g("half_baths"))
+    out = {
+        "id": str(g("property_id", "listing_id", "mls_id") or addr),
+        "formattedAddress": addr, "propertyType": ptype, "price": num(g("list_price")),
+        "bedrooms": num(g("beds")), "bathrooms": (full or 0) + 0.5 * (half or 0) if full is not None else None,
+        "squareFootage": num(g("sqft")), "lotSize": num(g("lot_sqft")), "yearBuilt": num(g("year_built")),
+        "daysOnMarket": num(g("days_on_mls")), "latitude": num(g("latitude")), "longitude": num(g("longitude")),
+        "hoa": num(g("hoa_fee")), "url": g("property_url"), "photo": g("primary_photo"),
+    }
+    for k in ("bedrooms", "squareFootage", "lotSize", "yearBuilt", "daysOnMarket"):
+        if out[k] is not None:
+            out[k] = int(out[k])
+    return {k: v for k, v in out.items() if v not in (None, "", 0) or k == "bedrooms" and v == 0}
+
+
+def homeharvest(zipcode, kind):
+    from homeharvest import scrape_property
+    df = scrape_property(location=zipcode, listing_type=kind)
+    rows = [from_homeharvest(r) for r in df.to_dict("records")]
+    # keep homes actually in this zip (searches can spill into neighbours)
+    return [r for r in rows if zipcode in (r.get("formattedAddress") or "") or not r.get("formattedAddress")]
+
+
+def rentcast(path, key, zipcode):
+    r = requests.get(f"{RENTCAST}/{path}", headers={"X-Api-Key": key, "Accept": "application/json"},
+                     params={"zipCode": zipcode, "status": "Active", "limit": 500}, timeout=60)
+    r.raise_for_status()
+    keep = ["id", "formattedAddress", "propertyType", "price", "bedrooms", "bathrooms", "squareFootage",
+            "lotSize", "yearBuilt", "daysOnMarket", "latitude", "longitude"]
+    out = []
+    for x in r.json():
+        y = {k: x[k] for k in keep if x.get(k) is not None}
+        if (x.get("hoa") or {}).get("fee"):
+            y["hoa"] = x["hoa"]["fee"]
+        out.append(y)
     return out
 
 
-def get(path, key, zipcode):
-    r = requests.get(f"{API}/{path}", headers={"X-Api-Key": key, "Accept": "application/json"},
-                     params={"zipCode": zipcode, "status": "Active", "limit": 500}, timeout=60)
-    r.raise_for_status()
-    return [trim(x) for x in r.json()]
-
-
-def add_facing(data, path):
-    """Estimate which way each house faces from OpenStreetMap streets (free, no RentCast calls)."""
+def add_facing(data):
+    """Estimate which way each house faces from OpenStreetMap streets."""
     try:
         orient.add_orientation(data["sale"])
-        path.write_text(json.dumps(data, separators=(",", ":")))
         n = sum(1 for x in data["sale"] if x.get("orient"))
         print(f"{data['zip']}: facing direction estimated for {n} of {len(data['sale'])} homes")
     except Exception as e:  # noqa: BLE001
@@ -61,13 +103,12 @@ def add_facing(data, path):
 
 
 def inspect_houses(key):
-    """Property records for the addresses in inspect.txt, saved in listings/properties.json."""
+    """RentCast property records for the addresses in inspect.txt, saved in listings/properties.json."""
     path = OUT / "properties.json"
     saved = json.loads(path.read_text()) if path.exists() else {}
     wanted = [ln.split("#")[0].strip() for ln in INSPECT.read_text().splitlines()] if INSPECT.exists() else []
     wanted = [a for a in wanted if a]
-    new = [a for a in wanted if a not in saved][:NEW_INSPECTIONS]
-    for address in new:
+    for address in [a for a in wanted if a not in saved][:NEW_INSPECTIONS] if key else []:
         r = requests.get("https://api.rentcast.io/v1/properties", headers={"X-Api-Key": key, "Accept": "application/json"},
                          params={"address": address}, timeout=60)
         if r.status_code != 200:
@@ -77,44 +118,46 @@ def inspect_houses(key):
         saved[address] = found[0] if found else {"formattedAddress": address, "notFound": True}
         print(f"{address}: {'found' if found else 'not found'}")
     saved = {a: v for a, v in saved.items() if a in wanted}      # drop removed addresses
-    OUT.mkdir(exist_ok=True)
     path.write_text(json.dumps(saved, separators=(",", ":")))
 
 
 def main():
     key = os.environ.get("RENTCAST_API_KEY", "").strip()
-    if not key:
-        print("No RENTCAST_API_KEY set, skipping listings.")
-        return
     zips = []
     for line in WATCHLIST.read_text().splitlines():
         z = line.split("#")[0].strip()
         if len(z) == 5 and z.isdigit() and z not in zips:
             zips.append(z)
     if len(zips) > MAX_ZIPS:
-        print(f"Watchlist has {len(zips)} zips; only the first {MAX_ZIPS} are used to stay in the free plan.")
+        print(f"Watchlist has {len(zips)} zips; only the first {MAX_ZIPS} are used.")
         zips = zips[:MAX_ZIPS]
     OUT.mkdir(exist_ok=True)
     today = dt.date.today()
+    rentcast_used = 0
     for z in zips:
         path = OUT / f"{z}.json"
-        if path.exists():
-            data = json.loads(path.read_text())
-            last = dt.date.fromisoformat(data["fetched"])
-            if (today - last).days < REFRESH_DAYS:
-                print(f"{z}: fetched {last}, still fresh")
-                if any("orient" not in x for x in data["sale"]):
-                    add_facing(data, path)
-                continue
+        old = json.loads(path.read_text()) if path.exists() else None
+        data = None
         try:
-            data = {"zip": z, "fetched": today.isoformat(),
-                    "sale": get("sale", key, z), "rent": get("rental/long-term", key, z)}
-        except requests.HTTPError as e:
-            print(f"{z}: RentCast error {e.response.status_code}: {e.response.text[:200]}", file=sys.stderr)
+            data = {"zip": z, "fetched": today.isoformat(), "source": "Realtor.com",
+                    "sale": homeharvest(z, "for_sale"), "rent": homeharvest(z, "for_rent")}
+        except Exception as e:  # noqa: BLE001
+            print(f"{z}: Realtor.com (HomeHarvest) failed: {e}", file=sys.stderr)
+            stale = not old or (today - dt.date.fromisoformat(old["fetched"])).days >= RENTCAST_DAYS
+            if key and stale and rentcast_used < RENTCAST_ZIPS:
+                try:
+                    data = {"zip": z, "fetched": today.isoformat(), "source": "RentCast",
+                            "sale": rentcast("sale", key, z), "rent": rentcast("rental/long-term", key, z)}
+                    rentcast_used += 1
+                except requests.HTTPError as e2:
+                    print(f"{z}: RentCast error {e2.response.status_code}: {e2.response.text[:200]}", file=sys.stderr)
+        if data is None:
+            if old:
+                print(f"{z}: keeping listings from {old['fetched']}")
             continue
+        print(f"{z}: {len(data['sale'])} for sale, {len(data['rent'])} for rent ({data['source']})")
+        add_facing(data)
         path.write_text(json.dumps(data, separators=(",", ":")))
-        print(f"{z}: {len(data['sale'])} for sale, {len(data['rent'])} for rent")
-        add_facing(data, path)
     # drop zips that were removed from the watchlist
     for p in OUT.glob("*.json"):
         if p.stem not in zips and p.stem not in ("index", "properties"):

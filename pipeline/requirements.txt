@@ -3,3 +3,4 @@ numpy
 openpyxl
 requests
 scikit-learn>=1.4
+homeharvest

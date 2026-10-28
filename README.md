@@ -13,7 +13,7 @@ A free website that sizes up any US zip code before you buy a home. You type a z
 - **Natural hazards and the building:** FEMA's National Risk Index (flood, wildfire, hurricane, tornado, earthquake, heat and more), the expected yearly damage on the selected home, and what to check for the age of homes in the area.
 - **Politics and law:** county and state presidential results since 2000, plus state rent control rules, just-cause eviction rules and eviction notice periods.
 - **Sun, Vaastu and Feng Shui:** the sun's path through the year for the zip, and traditional Vaastu and Feng Shui checks for a house once you enter which way it faces and where its rooms are.
-- **Listings and house lookups:** homes for sale and for rent from RentCast for a short watchlist of zips, plus the property record (year built, roof, exterior and foundation type, tax assessments, last sale) for specific addresses you add.
+- **Homes you can buy:** homes for sale and for rent in your watchlist zips, filtered to what you can afford, each with its estimated facing direction and Vaastu / Feng Shui notes, plus the property record (year built, roof, exterior and foundation type, tax assessments, last sale) for specific addresses you add.
 
 Your own numbers (income, savings and so on) are only stored in your browser and never leave your device.
 
@@ -37,14 +37,16 @@ logs/last-build.txt         output of the latest daily build, to see what worked
 2. In the repo, go to **Settings > Pages** and set **Source** to **GitHub Actions**.
 3. Add these under **Settings > Secrets and variables > Actions**:
    - `CENSUS_API_KEY` (required): a free key from https://api.census.gov/data/key_signup.html.
-   - `RENTCAST_API_KEY` (optional): a key from https://app.rentcast.io/app/api (the free plan gives 50 calls a month). Without it the site works, just without live listings and house lookups.
+   - `RENTCAST_API_KEY` (optional): a key from https://app.rentcast.io/app/api (the free plan gives 50 calls a month), used for house lookups and as a backup listings source.
 4. Go to **Actions > Build and deploy > Run workflow**. The first run takes about 30 to 45 minutes because it downloads everything and trains the model, and the site appears at `https://<your-username>.github.io/<repo-name>/`.
 
 After that it rebuilds itself every day. You can also link straight to a zip with `?zip=43201` at the end of the address.
 
-## Listings, house lookups and the free RentCast plan
+## Listings and house lookups
 
-Each zip on `watchlist.txt` costs 2 RentCast calls (one for sale, one for rent) and is refreshed weekly, for at most 5 zips. Each address in `inspect.txt` costs one call the first time and is then kept, with at most 3 new addresses per day. Together that stays around the free 50 calls a month. Saved listings and lookups are committed back to the repo so they survive the daily rebuild. A paid RentCast plan allows more; change the limits at the top of `pipeline/fetch_listings.py`.
+Homes for sale and for rent in the zips on `watchlist.txt` (up to 30) are pulled every day from Realtor.com through [HomeHarvest](https://github.com/ZacharyHampton/HomeHarvest), a free open-source library that needs no key. It reads Realtor.com's site, which their terms of use don't allow, so it can stop working if they block it; this project is for personal use. If it fails, RentCast is used as a backup (weekly, up to 5 zips) when `RENTCAST_API_KEY` is set. Each address in `inspect.txt` gets one RentCast property-record lookup the first time and is then kept, with at most 3 new addresses per day. Saved listings and lookups are committed back to the repo so they survive the daily rebuild.
+
+Each listed home's facing direction is estimated from OpenStreetMap streets (the direction from the house to its nearest street), which drives the per-house Vaastu and Feng Shui notes.
 
 ## How fresh the data is
 
@@ -56,7 +58,9 @@ The site rebuilds daily, but each source publishes on its own schedule, and ever
 | Fed funds rate | Federal Reserve Bank of New York | daily |
 | Inflation (CPI) | Bureau of Labor Statistics | monthly |
 | Stock market (S&P 500) | Stooq or the open S&P 500 dataset | monthly |
-| Listings, house records | RentCast | weekly on the free plan |
+| Listings | Realtor.com via HomeHarvest (RentCast as backup) | daily |
+| House records (inspect.txt) | RentCast | on request |
+| Street map for facing direction | OpenStreetMap | daily |
 | Home values, rents, Zillow's 1-year forecast | Zillow Research | monthly (around the 16th) |
 | Buyer/seller market | Redfin Data Center | monthly |
 | 50-year zip price index | FHFA | yearly |

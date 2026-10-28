@@ -628,7 +628,7 @@
     const el = $("#s-listings");
     if (!listing) {
       const edit = repoEditLink("watchlist.txt");
-      el.innerHTML = `<h2>Homes for sale</h2><p class="note">Live listings are pulled weekly for the zips in your watchlist (up to 5 on RentCast's free plan).
+      el.innerHTML = `<h2>Homes for sale</h2><p class="note">Live listings are pulled daily for the zips in your watchlist (up to 30).
         ${edit ? `<a href="${edit}" target="_blank" rel="noopener">Add ${zip} to the watchlist</a> (put it on its own line and commit); it shows up after the next daily build.` : `To add ${zip}, put it on its own line in <code>watchlist.txt</code>.`}
         Meanwhile: <a href="https://www.zillow.com/homes/${zip}_rb/" target="_blank" rel="noopener">browse ${zip} on Zillow</a>.</p>`;
       return;
@@ -663,7 +663,7 @@
     const tag = v => v === "good" ? "pill" : v === "ok" ? "pill" : "pill warn";
     el.innerHTML = `
       <h2>Homes for sale you can buy in ${zip}</h2>
-      <div class="asof">RentCast, fetched ${listing.fetched}: ${sale.length} for sale, ${rentals.length} for rent. Facing directions estimated for ${nOriented} homes from OpenStreetMap streets.</div>
+      <div class="asof">${listing.source || "RentCast"}, fetched ${listing.fetched}: ${sale.length} for sale, ${rentals.length} for rent. Facing directions estimated for ${nOriented} homes from OpenStreetMap streets.</div>
       <p class="verdict"><b>${nFit}</b> of ${all.length} homes fit ${investor ? `your cash at ${o.invDown}% down` : "your income, savings and down payment"}.</p>
       <div class="row">
         <label class="note"><input type="checkbox" id="onlyAfford" ${onlyAfford ? "checked" : ""}> Only homes I can afford</label>
@@ -675,6 +675,7 @@
       </select></label></div>
       ${rows.length ? "" : `<p class="note">No homes match these filters right now.</p>`}
       <div class="listings">${rows.slice(0, 60).map(r => `<div class="listing">
+        ${r.s.photo ? `<img src="${esc(r.s.photo)}" alt="" loading="lazy" style="width:100%;height:150px;object-fit:cover;border-radius:6px;margin-bottom:6px">` : ""}
         <div class="price">${money(r.s.price)} ${r.fits ? `<span class="pill">${investor ? "Within your cash" : "In budget"}</span>` : ""}</div>
         <div>${esc(r.s.formattedAddress || "")}</div>
         <div class="note">${esc(r.group)} &middot; ${r.tier}${r.s.squareFootage >= 5000 ? " &middot; Large (5,000+ sq ft)" : ""}</div>
@@ -683,7 +684,7 @@
         ${investor && r.inv ? `<div class="note">If rented at ~${money(r.estRent)}: cash flow ${money(r.inv.cashFlow)}/mo, cap rate ${pct(r.inv.capRate, 1)}</div>` : ""}
         ${r.f ? `<div style="margin-top:4px">Faces <b>${DIR_NAMES[r.f]}</b>${r.s.orient.street ? ` onto ${esc(r.s.orient.street)}` : ""} <span class="${tag(r.vr[0])}">${r.vr[1]}</span></div>
           <div class="note">${FACING_LIGHT[r.f]}${r.s.orient.tjunction ? " <b>Feng Shui:</b> a street ends pointing at this house (T-junction)." : ""}${r.s.orient.corner ? " Corner lot." : ""}</div>` : ""}
-        ${r.s.latitude ? `<div class="note"><a href="https://www.google.com/maps/@${r.s.latitude},${r.s.longitude},60m/data=!3m1!1e3" target="_blank" rel="noopener">Satellite view</a>${r.f ? ` &middot; <button type="button" class="link" data-face="${r.f}">Check rooms in Vaastu</button>` : ""}</div>` : ""}
+        ${r.s.latitude ? `<div class="note">${r.s.url ? `<a href="${esc(r.s.url)}" target="_blank" rel="noopener">Listing</a> &middot; ` : ""}<a href="https://www.google.com/maps/@${r.s.latitude},${r.s.longitude},60m/data=!3m1!1e3" target="_blank" rel="noopener">Satellite view</a>${r.f ? ` &middot; <button type="button" class="link" data-face="${r.f}">Check rooms in Vaastu</button>` : ""}</div>` : ""}
       </div>`).join("")}</div>
       ${rows.length > 60 ? `<p class="note">Showing 60 of ${rows.length}.</p>` : ""}
       <p class="note">Facing is estimated as the direction from the house to its nearest street, so check corner lots and long driveways on the satellite view. Room layout isn't in listing data; use "Check rooms in Vaastu" to fill it in from the listing photos.</p>
