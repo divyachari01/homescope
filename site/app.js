@@ -1406,7 +1406,7 @@
       </details>
       <p class="note legend"><span style="color:#1f9d6b">&#9679;</span> good price <span style="color:#2f6fb5">&#9679;</span> fair <span style="color:#c4622d">&#9679;</span> priced high <span style="color:#9a9a9a">&#9679;</span> over budget or no estimate</p>
       <p class="verdict">${loading ? `<span class="note">Loading homes for ${loading} zip code${loading > 1 ? "s" : ""} (5-30 s the first time)... </span>` : ""}
-        ${noneInBudget ? `Nothing within your budget of ${k(budget)} here. Cheapest homes shown.` : `<b>${shown.length}</b> home${shown.length === 1 ? "" : "s"}${shown.length ? ", best matches first" : ". Try fewer filters or a higher price"}.`}</p>`;
+        ${loading && !homes.length ? "" : noneInBudget ? `Nothing within your budget of ${k(budget)} here. Cheapest homes shown.` : `<b>${shown.length}</b> home${shown.length === 1 ? "" : "s"}${shown.length ? ", best matches first" : ". Try fewer filters or a higher price"}.`}</p>`;
     const on = (id, f) => { const x = $("#" + id); if (x) x.onchange = e => { f(e.target); F.shown = 24; renderHomes(); }; };
     on("fMax", t => { F.max = Number(t.value) === budget ? null : Number(t.value); }); on("fBeds", t => { F.beds = Number(t.value); });
     on("fBaths", t => { F.baths = Number(t.value); }); on("fType", t => { F.type = t.value; }); on("fSort", t => { F.sort = t.value; });
