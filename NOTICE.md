@@ -38,7 +38,7 @@ That license covers only this project's own code and text. The third-party softw
 
 ## Listings
 
-Listings are read from Realtor.com with the open-source HomeHarvest library. Realtor.com's terms of use do not permit automated collection, and listing descriptions and photos belong to their owners (brokers, photographers and MLSs). To limit this, HomeScope does not copy or display listing photos or descriptions; it shows basic facts (price, beds, baths, size, year built, location) with a link back to the original listing. Anyone running this project is responsible for checking that their use complies with the terms of the sites they read.
+Listings are read from Realtor.com with the open-source HomeHarvest library. Realtor.com's terms of use do not permit automated collection, and listing photos and descriptions belong to their owners (brokers, photographers and MLSs). HomeScope does not copy or store any listing photo or description: each listing card shows the listing's main photo loaded directly from Realtor.com's own servers, labelled "Photo: Realtor.com" and linked to the original listing, together with basic facts (price, beds, baths, size, year built, location). Owners who want a photo or listing removed can open an issue on this repository and it will be taken down. Anyone running this project is responsible for checking that their use complies with the terms of the sites they read.
 
 ## Disclaimer
 

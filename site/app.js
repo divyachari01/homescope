@@ -713,6 +713,7 @@
       </select></label></div>
       ${rows.length ? "" : `<p class="note">No homes match these filters right now.</p>`}
       <div class="listings">${rows.slice(0, 60).map(r => `<div class="listing">
+        ${r.s.photo && r.s.url ? `<a href="${esc(r.s.url)}" target="_blank" rel="noopener" class="photo"><img src="${esc(r.s.photo)}" alt="Listing photo" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.remove()"><span>Photo: Realtor.com &middot; open listing</span></a>` : ""}
         <div class="price">${money(r.s.price)} ${r.fits ? `<span class="pill">${investor ? "Within your cash" : "In budget"}</span>` : ""}</div>
         <div>${esc(r.s.formattedAddress || "")}</div>
         <div class="note">${esc(r.group)} &middot; ${r.tier}${r.s.squareFootage >= 5000 ? " &middot; Large (5,000+ sq ft)" : ""}</div>
