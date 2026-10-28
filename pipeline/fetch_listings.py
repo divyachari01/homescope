@@ -19,6 +19,8 @@ from pathlib import Path
 
 import requests
 
+import orient
+
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "listings"
 WATCHLIST = ROOT / "watchlist.txt"
@@ -45,6 +47,17 @@ def get(path, key, zipcode):
                      params={"zipCode": zipcode, "status": "Active", "limit": 500}, timeout=60)
     r.raise_for_status()
     return [trim(x) for x in r.json()]
+
+
+def add_facing(data, path):
+    """Estimate which way each house faces from OpenStreetMap streets (free, no RentCast calls)."""
+    try:
+        orient.add_orientation(data["sale"])
+        path.write_text(json.dumps(data, separators=(",", ":")))
+        n = sum(1 for x in data["sale"] if x.get("orient"))
+        print(f"{data['zip']}: facing direction estimated for {n} of {len(data['sale'])} homes")
+    except Exception as e:  # noqa: BLE001
+        print(f"{data['zip']}: could not estimate facing directions: {e}", file=sys.stderr)
 
 
 def inspect_houses(key):
@@ -86,9 +99,12 @@ def main():
     for z in zips:
         path = OUT / f"{z}.json"
         if path.exists():
-            last = dt.date.fromisoformat(json.loads(path.read_text())["fetched"])
+            data = json.loads(path.read_text())
+            last = dt.date.fromisoformat(data["fetched"])
             if (today - last).days < REFRESH_DAYS:
                 print(f"{z}: fetched {last}, still fresh")
+                if any("orient" not in x for x in data["sale"]):
+                    add_facing(data, path)
                 continue
         try:
             data = {"zip": z, "fetched": today.isoformat(),
@@ -98,6 +114,7 @@ def main():
             continue
         path.write_text(json.dumps(data, separators=(",", ":")))
         print(f"{z}: {len(data['sale'])} for sale, {len(data['rent'])} for rent")
+        add_facing(data, path)
     # drop zips that were removed from the watchlist
     for p in OUT.glob("*.json"):
         if p.stem not in zips and p.stem not in ("index", "properties"):

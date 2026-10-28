@@ -18,7 +18,7 @@
   };
 
   let NAT = null, STATES = {}, LISTED = [], INSPECTED = {};
-  let rec = null, zip = "", target = { type: "all", custom: null }, listing = null, listFilter = "All", listSort = "price";
+  let rec = null, zip = "", target = { type: "all", custom: null }, listing = null, listFilter = "All", listSort = "fit", onlyAfford = true, vaastuOnly = false;
   const charts = {};
 
   // ---------------------------------------------------------------- formatting
@@ -611,53 +611,92 @@
 
   // ---------------------------------------------------------------- listings
   function median(a) { return Calc.percentile(a, 50); }
+  function repoEditLink(file) {
+    const h = location.hostname;
+    if (!h.endsWith(".github.io")) return null;
+    const user = h.split(".")[0], repo = location.pathname.split("/")[1] || `${user}.github.io`;
+    return `https://github.com/${user}/${repo}/edit/main/${file}`;
+  }
+  function facingRating(f) {
+    if (!f) return null;
+    if (["N", "E", "NE"].includes(f)) return ["good", "Vaastu-favoured facing"];
+    if (f === "SW") return ["poor", "Least favoured facing in Vaastu"];
+    if (["S", "SE"].includes(f)) return ["mixed", "Not ideal in Vaastu"];
+    return ["ok", "Acceptable in Vaastu"];
+  }
   function renderListings(o) {
     const el = $("#s-listings");
     if (!listing) {
-      el.innerHTML = `<h2>Listings</h2><p class="note">Live listings are pulled weekly for the zips in <code>watchlist.txt</code> (up to 5 on RentCast's free plan). To add ${zip}, put it on its own line in that file on GitHub and run the workflow.
+      const edit = repoEditLink("watchlist.txt");
+      el.innerHTML = `<h2>Homes for sale</h2><p class="note">Live listings are pulled weekly for the zips in your watchlist (up to 5 on RentCast's free plan).
+        ${edit ? `<a href="${edit}" target="_blank" rel="noopener">Add ${zip} to the watchlist</a> (put it on its own line and commit); it shows up after the next daily build.` : `To add ${zip}, put it on its own line in <code>watchlist.txt</code>.`}
         Meanwhile: <a href="https://www.zillow.com/homes/${zip}_rb/" target="_blank" rel="noopener">browse ${zip} on Zillow</a>.</p>`;
       return;
     }
-    const mode = $("#purpose").value, maxP = Calc.maxPrice(o).price;
+    const mode = $("#purpose").value, investor = mode === "rent" || mode === "str";
     const sale = listing.sale || [], rentals = listing.rent || [];
     const rentByBeds = {};
     rentals.forEach(r => { if (r.price && r.bedrooms != null) (rentByBeds[r.bedrooms] = rentByBeds[r.bedrooms] || []).push(r.price); });
     const prices = sale.map(s => s.price).filter(Boolean);
     const t1 = Calc.percentile(prices, 33.3), t2 = Calc.percentile(prices, 66.7);
-    const groups = ["All", ...new Set(sale.map(s => LISTING_GROUPS[s.propertyType] || s.propertyType || "Other"))];
-    const rows = sale.filter(s => s.price).map(s => {
+    const all = sale.filter(s => s.price).map(s => {
       const group = LISTING_GROUPS[s.propertyType] || s.propertyType || "Other";
       const tier = s.price <= t1 ? "Lower third" : s.price <= t2 ? "Middle third" : "Upper third";
       const oo = { ...o, hoa: s.hoa || o.hoa };
       const pay = Calc.monthly(s.price, oo).total;
       const estRent = rentByBeds[s.bedrooms]?.length >= 3 ? median(rentByBeds[s.bedrooms]) : typicalRent();
       const inv = estRent ? Calc.rental(s.price, estRent, investorOpts(oo)) : null;
-      return { s, group, tier, pay, estRent, inv, fits: s.price <= maxP };
-    }).filter(r => listFilter === "All" || r.group === listFilter);
+      const fits = investor ? s.price * (o.invDown + o.closingPct) / 100 <= o.cash : s.price <= Calc.maxPrice(oo).price;
+      const f = s.orient?.facing, vr = facingRating(f);
+      const vScore = vr ? { good: 3, ok: 2, mixed: 1, poor: 0 }[vr[0]] - (s.orient.tjunction ? 1 : 0) : 1;
+      return { s, group, tier, pay, estRent, inv, fits, f, vr, vScore };
+    });
+    const groups = ["All", ...new Set(all.map(r => r.group))];
+    const rows = all.filter(r => (listFilter === "All" || r.group === listFilter) && (!onlyAfford || r.fits)
+      && (!vaastuOnly || (r.vr && r.vr[0] === "good")));
     const sorters = { price: (a, b) => a.s.price - b.s.price, cash: (a, b) => (b.inv?.cashFlow ?? -1e9) - (a.inv?.cashFlow ?? -1e9),
-      fit: (a, b) => (b.fits - a.fits) || a.s.price - b.s.price, newest: (a, b) => (a.s.daysOnMarket ?? 1e9) - (b.s.daysOnMarket ?? 1e9) };
-    rows.sort(sorters[listSort] || sorters.price);
+      fit: (a, b) => (b.fits - a.fits) || a.s.price - b.s.price, newest: (a, b) => (a.s.daysOnMarket ?? 1e9) - (b.s.daysOnMarket ?? 1e9),
+      vaastu: (a, b) => (b.fits - a.fits) || (b.vScore - a.vScore) || a.s.price - b.s.price };
+    rows.sort(sorters[listSort] || sorters.fit);
+    const nFit = all.filter(r => r.fits).length, nOriented = all.filter(r => r.f).length;
     const beds = Object.keys(rentByBeds).sort((a, b) => a - b).map(b => `<tr><td>${b == 0 ? "Studio" : b + " bed"}</td><td>${rentByBeds[b].length}</td><td>${money(median(rentByBeds[b]))}</td></tr>`).join("");
+    const tag = v => v === "good" ? "pill" : v === "ok" ? "pill" : "pill warn";
     el.innerHTML = `
-      <h2>Listings in ${zip}</h2>
-      <div class="asof">RentCast, fetched ${listing.fetched}: ${sale.length} for sale, ${rentals.length} for rent</div>
+      <h2>Homes for sale you can buy in ${zip}</h2>
+      <div class="asof">RentCast, fetched ${listing.fetched}: ${sale.length} for sale, ${rentals.length} for rent. Facing directions estimated for ${nOriented} homes from OpenStreetMap streets.</div>
+      <p class="verdict"><b>${nFit}</b> of ${all.length} homes fit ${investor ? `your cash at ${o.invDown}% down` : "your income, savings and down payment"}.</p>
+      <div class="row">
+        <label class="note"><input type="checkbox" id="onlyAfford" ${onlyAfford ? "checked" : ""}> Only homes I can afford</label>
+        <label class="note"><input type="checkbox" id="vaastuOnly" ${vaastuOnly ? "checked" : ""}> Only Vaastu-favoured facing (north, east, north-east)</label>
+      </div>
       <div class="chips" id="chips">${groups.map(g => `<button type="button" class="${g === listFilter ? "on" : ""}" data-g="${esc(g)}">${esc(g)}</button>`).join("")}</div>
       <div class="row"><label class="note">Sort <select id="listSort">
-        ${[["fit", "Within my budget first"], ["price", "Price"], ["cash", "Rental cash flow"], ["newest", "Newest"]].map(([v, l]) => `<option value="${v}" ${v === listSort ? "selected" : ""}>${l}</option>`).join("")}
+        ${[["fit", "Within my budget first"], ["vaastu", "Budget, then best Vaastu / Feng Shui"], ["price", "Price"], ["cash", "Rental cash flow"], ["newest", "Newest"]].map(([v, l]) => `<option value="${v}" ${v === listSort ? "selected" : ""}>${l}</option>`).join("")}
       </select></label></div>
+      ${rows.length ? "" : `<p class="note">No homes match these filters right now.</p>`}
       <div class="listings">${rows.slice(0, 60).map(r => `<div class="listing">
-        <div class="price">${money(r.s.price)} ${r.fits ? '<span class="pill">In budget</span>' : ""}</div>
+        <div class="price">${money(r.s.price)} ${r.fits ? `<span class="pill">${investor ? "Within your cash" : "In budget"}</span>` : ""}</div>
         <div>${esc(r.s.formattedAddress || "")}</div>
         <div class="note">${esc(r.group)} &middot; ${r.tier}${r.s.squareFootage >= 5000 ? " &middot; Large (5,000+ sq ft)" : ""}</div>
         <div class="note">${r.s.bedrooms ?? "?"} bd &middot; ${r.s.bathrooms ?? "?"} ba${r.s.squareFootage ? ` &middot; ${r.s.squareFootage.toLocaleString()} sq ft` : ""}${r.s.yearBuilt ? ` &middot; built ${r.s.yearBuilt}` : ""}${r.s.daysOnMarket != null ? ` &middot; ${r.s.daysOnMarket} days listed` : ""}</div>
         <div>Owner cost ${money(r.pay)}/mo${r.s.hoa ? ` (incl. HOA ${money(r.s.hoa)})` : ""}</div>
-        ${r.s.latitude ? `<div class="note"><a href="https://www.google.com/maps/@${r.s.latitude},${r.s.longitude},60m/data=!3m1!1e3" target="_blank" rel="noopener">Satellite view</a> (to check which way it faces)</div>` : ""}
-        ${mode !== "live" && r.inv ? `<div class="note">If rented at ~${money(r.estRent)}: cash flow ${money(r.inv.cashFlow)}/mo, cap rate ${pct(r.inv.capRate, 1)}</div>` : ""}
+        ${investor && r.inv ? `<div class="note">If rented at ~${money(r.estRent)}: cash flow ${money(r.inv.cashFlow)}/mo, cap rate ${pct(r.inv.capRate, 1)}</div>` : ""}
+        ${r.f ? `<div style="margin-top:4px">Faces <b>${DIR_NAMES[r.f]}</b>${r.s.orient.street ? ` onto ${esc(r.s.orient.street)}` : ""} <span class="${tag(r.vr[0])}">${r.vr[1]}</span></div>
+          <div class="note">${FACING_LIGHT[r.f]}${r.s.orient.tjunction ? " <b>Feng Shui:</b> a street ends pointing at this house (T-junction)." : ""}${r.s.orient.corner ? " Corner lot." : ""}</div>` : ""}
+        ${r.s.latitude ? `<div class="note"><a href="https://www.google.com/maps/@${r.s.latitude},${r.s.longitude},60m/data=!3m1!1e3" target="_blank" rel="noopener">Satellite view</a>${r.f ? ` &middot; <button type="button" class="link" data-face="${r.f}">Check rooms in Vaastu</button>` : ""}</div>` : ""}
       </div>`).join("")}</div>
       ${rows.length > 60 ? `<p class="note">Showing 60 of ${rows.length}.</p>` : ""}
+      <p class="note">Facing is estimated as the direction from the house to its nearest street, so check corner lots and long driveways on the satellite view. Room layout isn't in listing data; use "Check rooms in Vaastu" to fill it in from the listing photos.</p>
       ${beds ? `<h3>Rentals listed now</h3><table><tr><th>Size</th><th>Listings</th><th>Median rent</th></tr>${beds}</table>` : ""}`;
     el.querySelectorAll("#chips button").forEach(b => b.onclick = () => { listFilter = b.dataset.g; renderListings(inputs()); });
     $("#listSort").onchange = e => { listSort = e.target.value; renderListings(inputs()); };
+    $("#onlyAfford").onchange = e => { onlyAfford = e.target.checked; renderListings(inputs()); };
+    $("#vaastuOnly").onchange = e => { vaastuOnly = e.target.checked; renderListings(inputs()); };
+    el.querySelectorAll("[data-face]").forEach(b => b.onclick = () => {
+      sunInputs.facing = b.dataset.face;
+      try { localStorage.setItem("hc-sun", JSON.stringify(sunInputs)); } catch (e) { /* ignore */ }
+      renderSun(); $("#s-sun").scrollIntoView({ behavior: "smooth" });
+    });
   }
 
   // ---------------------------------------------------------------- buyer's / seller's market
@@ -730,6 +769,11 @@
 
   // ---------------------------------------------------------------- sun path, Vaastu and Feng Shui
   const DIRS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+  const FACING_LIGHT = {
+    N: "The front gets little direct sun; the back gets the most.", S: "The front gets sun most of the day, strongest in winter.",
+    E: "The front gets morning sun; the back gets the afternoon.", W: "The front gets afternoon and evening sun, which is hot in summer.",
+    NE: "The front gets early morning sun only.", NW: "The front gets late-evening sun in summer.", SE: "The front gets morning and midday sun.", SW: "The front gets the hot afternoon sun.",
+  };
   const DIR_NAMES = { N: "North", NE: "North-east", E: "East", SE: "South-east", S: "South", SW: "South-west", W: "West", NW: "North-west" };
   let sunInputs = { facing: "", kitchen: "", bedroom: "", prayer: "", shape: "", fs: {} };
   try { sunInputs = Object.assign(sunInputs, JSON.parse(localStorage.getItem("hc-sun") || "{}")); } catch (e) { /* ignore */ }
@@ -777,11 +821,7 @@
     const lat = rec.lat, si = sunInputs;
     const t = [["Summer (Jun 21)", sunTimes(lat, 23.44)], ["Spring / autumn", sunTimes(lat, 0)], ["Winter (Dec 21)", sunTimes(lat, -23.44)]];
     const opt = (key, extra = "") => `<select data-sun="${key}"><option value="">Not sure</option>${DIRS.map(d => `<option value="${d}" ${si[key] === d ? "selected" : ""}>${DIR_NAMES[d]}</option>`).join("")}${extra}</select>`;
-    const facingLight = si.facing ? {
-      N: "The front gets little direct sun; the back garden gets the most.", S: "The front gets sun most of the day, strongest in winter.",
-      E: "The front gets morning sun; the back gets the afternoon.", W: "The front gets afternoon and evening sun, which is hot in summer.",
-      NE: "The front gets early morning sun only.", NW: "The front gets late-evening sun in summer.", SE: "The front gets morning and midday sun.", SW: "The front gets the hot afternoon sun.",
-    }[si.facing] : "";
+    const facingLight = si.facing ? FACING_LIGHT[si.facing] : "";
     const vs = vaastu(si), fsHits = Object.keys(FS_ITEMS).filter(kk => si.fs[kk]);
     const tag = v => v === "good" ? '<span class="pill">Good</span>' : v === "poor" ? '<span class="pill warn">Avoid</span>' : v === "mixed" ? '<span class="pill warn">Not ideal</span>' : '<span class="pill">OK</span>';
     $("#s-sun").innerHTML = `<h2>Sun, Vaastu and Feng Shui</h2>
