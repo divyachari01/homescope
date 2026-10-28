@@ -314,11 +314,14 @@ def district_grades(seda_csv, pool_csv=None):
     df[val] = pd.to_numeric(df[val], errors="coerce")
     year = pd.to_numeric(df["year"], errors="coerce") if "year" in df else None
     if year is not None:
+        # each district's own latest year (some states have no results for the newest year)
+        df = df.assign(_y=year)
+        df = df[df["_y"] == df.groupby(idc)["_y"].transform("max")]
         last = int(year.max())
-        df = df[year == last]
     else:
         last = None
-    g = df.groupby(idc).agg(score=(val, "mean"), name=(namec, "first") if namec else (val, "size"))
+    g = df.groupby(idc).agg(score=(val, "mean"), name=(namec, "first") if namec else (val, "size"),
+                            dyear=("_y", "max") if "_y" in df else (val, "size"))
     g = g.dropna(subset=["score"])
     # Progress: how scores change from lower to higher grades in the same year. On this scale 0 means
     # "keeps pace with the national average", so a positive slope means students gain ground as they go.
@@ -348,7 +351,7 @@ def district_grades(seda_csv, pool_csv=None):
         sp = g.groupby(g.index.str[:2])["growth"].rank(pct=True) * 100
         g["g10"] = np.clip(np.ceil(gp / 10), 1, 10)
         g["gs10"] = np.clip(np.ceil(sp / 10), 1, 10)
-    g["year"] = last
+    g["year"] = g["dyear"] if "_y" in df else last
     return g
 
 
