@@ -151,9 +151,18 @@
     const P = new URLSearchParams(location.search), q = P.get("zip") || P.get("city");
     updateBudget();
     if (P.get("zip") && P.get("view") === "area") { $("#zip").value = P.get("zip"); openReport(P.get("zip")); return; }
+    if (q) { $("#zip").value = q; lookup(); return; }
+    // a plain visit opens on the welcome header; offer the last search instead of jumping into it
     let last = null;
     try { last = localStorage.getItem("hc-search"); } catch (e) { /* ignore */ }
-    if (q || last) { $("#zip").value = q || last; lookup(); }
+    if (last) {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "ex"; b.textContent = last;
+      b.onclick = () => { $("#zip").value = last; lookup(); };
+      $(".examples").prepend(document.createTextNode(" "));
+      $(".examples").prepend(b);
+      $(".examples").prepend(document.createTextNode("Pick up where you left off: "));
+    }
   }
 
   // One search box: a zip, a city or county, or a house (street address or listing link).
