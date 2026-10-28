@@ -2,5 +2,8 @@
   "framework": null,
   "functions": {
     "api/listings.py": { "maxDuration": 60, "includeFiles": "pipeline/{fetch_listings,orient}.py" }
-  }
+  },
+  "redirects": [
+    { "source": "/", "destination": "https://divyachari01.github.io/homescope/", "permanent": false }
+  ]
 }
