@@ -1,2 +1,6 @@
 National series
-ERROR: required source rate30 unavailable: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+  WARNING: skipping rate30: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=300)
+  downloaded pmms
+  WARNING: skipping cpi: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=300)
+  WARNING: skipping cpi_bls: 403 Client Error: Forbidden for url: https://download.bls.gov/pub/time.series/cu/cu.data.1.AllItems
+ERROR: no inflation (CPI) source could be downloaded
