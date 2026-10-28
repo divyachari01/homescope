@@ -85,6 +85,12 @@
   }
 
   // ---------------------------------------------------------------- data access
+  // Zip data comes in files of ~40 zips (by first 3 digits); keep each file once it's loaded.
+  const shards = new Map();
+  function getShard(prefix) {
+    if (!shards.has(prefix)) shards.set(prefix, getJSON(`data/zips/${prefix}.json`).catch(e => { shards.delete(prefix); throw e; }));
+    return shards.get(prefix);
+  }
   async function getJSON(url) {
     const r = await fetch(url);
     if (!r.ok) throw new Error(r.status);
@@ -113,7 +119,7 @@
     if (!/^\d{5}$/.test(zip)) { $("#status").textContent = "Enter a 5-digit zip code."; return; }
     $("#status").textContent = "Loading...";
     try {
-      const shard = await getJSON(`data/zips/${zip.slice(0, 3)}.json`);
+      const shard = await getShard(zip.slice(0, 3));
       rec = shard[zip];
     } catch (e) { rec = null; }
     if (!rec) { $("#results").hidden = true; $("#status").textContent = `No data for ${zip}. It may be a PO box or business-only zip.`; return; }
@@ -209,7 +215,7 @@
     else if (rec.acs?.home_value) out.push(card("Median home value", k(rec.acs.home_value), "Census estimate (Zillow has no value here)"));
     const mp = Calc.maxPrice(o);
     const tp = targetPrice(o);
-    out.push(card("You can afford up to", k(mp.price), `at ${o.ratePct}% &middot; limited by your ${mp.limitedBy}`,
+    out.push(card("You can afford up to", k(mp.price), `at ${o.ratePct}%. Your income allows ${k(mp.byPayment)}, your cash allows ${k(mp.byCash)} (${o.downPct}% down + closing)`,
       tp ? (mp.price >= tp ? `<span class="pill">Covers the ${TYPES.find(t => t[0] === target.type)[1].toLowerCase()}</span>`
                           : `<span class="pill warn">${k(tp - mp.price)} short of the selected home</span>`) : ""));
     const ind = rec.ind || {}, p = rec.pct || {};
@@ -889,8 +895,16 @@
 
   // ---------------------------------------------------------------- events
   $("#lookup").addEventListener("submit", e => { e.preventDefault(); saveInputs(); lookup(); });
+  // Start loading as soon as the first 3 digits are typed; open the zip automatically at 5 digits.
+  $("#zip").addEventListener("input", e => {
+    const v = e.target.value.replace(/\D/g, "");
+    if (v.length >= 3) getShard(v.slice(0, 3)).catch(() => {});
+    if (v.length === 5 && v !== zip) lookup();
+  });
+  let typingTimer = null;
+  const liveUpdate = () => { clearTimeout(typingTimer); typingTimer = setTimeout(() => { saveInputs(); if (rec) renderAll(); }, 350); };
   $("#purpose").addEventListener("change", () => { saveInputs(); if (rec) renderAll(); });
-  document.querySelectorAll("[data-k]").forEach(el => el.addEventListener("change", () => { saveInputs(); if (rec) renderAll(); }));
+  document.querySelectorAll("[data-k]").forEach(el => { el.addEventListener("input", liveUpdate); el.addEventListener("change", liveUpdate); });
   $("#resetInputs").addEventListener("click", () => {
     try { localStorage.removeItem("hc-inputs"); } catch (e) { /* ignore */ }
     loadInputs(); if (rec) renderAll();
