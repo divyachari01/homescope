@@ -1,2 +1,2 @@
-43201: could not estimate facing directions: 502 Server Error: Bad Gateway for url: https://overpass-api.de/api/interpreter
 43201: 120 for sale, 575 for rent (Realtor.com)
+43201: facing direction estimated for 119 of 120 homes
