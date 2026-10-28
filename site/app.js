@@ -749,7 +749,7 @@
   // Crime level from the county rate per 100k (US averages: about 6 homicides, about 380 violent crimes).
   const crimeLevel = v => { if (!Number.isFinite(v)) return null; const t = crimeName() === "Homicides" ? [3, 7, 12] : [200, 400, 700];
     return v < t[0] ? "low" : v < t[1] ? "moderate" : v < t[2] ? "high" : "very high"; };
-  const facingRatingText = f => ["N", "E", "NE"].includes(f) ? "favoured in Vaastu" : f === "SW" ? "least favoured" : ["S", "SE"].includes(f) ? "not ideal" : "acceptable";
+  const facingRatingText = f => ["N", "E", "NE"].includes(f) ? "favoured" : f === "SW" ? "least favoured" : ["S", "SE"].includes(f) ? "not ideal" : "acceptable";
 
   // ---------------------------------------------------------------- "Our take": a written read on one house
   // Built from every signal the page has (value, market, forecast, budget, schools, crime, hazards,
@@ -796,7 +796,13 @@
     if (area.length) out.push(area.join(", ").replace(/^./, c => c.toUpperCase()) + ".");
     // 5. the house itself
     const house = [];
-    if (s.yearBuilt) { const age = new Date().getFullYear() - s.yearBuilt; house.push(age > 40 ? `it's ${age} years old, so budget for older systems (roof, wiring, pipes)` : age < 5 ? "it's nearly new" : `it was built in ${s.yearBuilt}`); }
+    const shared = ["Condo", "Apartment"].includes(s.propertyType);
+    if (s.yearBuilt) {
+      const age = new Date().getFullYear() - s.yearBuilt;
+      house.push(s.yearBuilt <= 1900 ? "the year built is listed as 1900, which often means unknown, so ask"
+        : shared ? (age > 40 ? `the building is ${age} years old, so check the HOA's reserve fund and any planned special assessments` : `the building dates from ${s.yearBuilt}`)
+        : age > 40 ? `it's ${age} years old, so budget for older systems (roof, wiring, pipes)` : age < 5 ? "it's nearly new" : `it was built in ${s.yearBuilt}`);
+    }
     if (d.good.length) house.push(`the listing mentions ${d.good.slice(0, 2).join(" and ")}`);
     if (d.bad.length) house.push(`it also mentions ${d.bad.slice(0, 2).join(" and ")}, which needs a closer look`);
     if (d.flip) house.push("it looks recently flipped, so check the quality of the work");
@@ -906,7 +912,7 @@
       </div>
       ${d.overBudget ? `<p><span class="pill warn">Over your budget of ${k(d.maxPrice)}</span></p>` : ""}
       ${(() => { const f = s.orient?.facing || shortlist[deal.id]?.facing, v = vaastuScore({ ...(shortlist[deal.id] || {}), facing: f, tjunction: s.orient ? !!s.orient.tjunction : undefined });
-        return f ? `<p class="vaastu-line"><b>Vaastu ${v ? v.pct + "%" : ""}</b> &middot; faces ${DIR_NAMES[f].toLowerCase()} (${facingRatingText(f)})${s.orient?.tjunction ? " &middot; a street points straight at it" : ""}${s.orient?.corner ? " &middot; corner lot" : ""}. ${shortlist[deal.id] ? "" : "Save it to add the rooms for a full score."}</p>`
+        return f ? `<p class="vaastu-line"><b>Vaastu ${v ? v.pct + "%" : ""}</b> &middot; faces ${DIR_NAMES[f].toLowerCase()} (${facingRatingText(f)} in Vaastu)${s.orient?.tjunction ? " &middot; a street points straight at it" : ""}${s.orient?.corner ? " &middot; corner lot" : ""}. ${shortlist[deal.id] ? "" : "Save it to add the rooms for a full score."}</p>`
           : `<p class="vaastu-line muted">Facing not known yet, so no Vaastu score. Check the satellite view.</p>`; })()}
       <div class="take"><h3>Our take</h3>${ourTake(s, d, o).map(t => `<p>${t}</p>`).join("")}</div>
       <h3>What to do</h3><ul class="tight">${tips.map(t => `<li>${t}</li>`).join("")}</ul>
@@ -945,7 +951,7 @@
         ${d.build.length ? `<p class="note"><b>Built with / on:</b> ${d.build.join(", ")}.</p>` : ""}
         ${d.good.length ? `<p class="note"><b>Updates mentioned:</b> ${d.good.join(", ")}. Ask for dates, permits and receipts.</p>` : ""}
         ${d.bad.length ? `<p class="note"><b>Watch-outs mentioned:</b> ${d.bad.join(", ")}.</p>` : ""}
-        ${s.yearBuilt ? `<ul class="note tight">${ageFlags(s.yearBuilt).map(f => `<li>${f}</li>`).join("")}</ul>` : ""}
+        ${s.yearBuilt ? `<ul class="note tight">${ageFlags(s.yearBuilt, ["Condo", "Apartment"].includes(s.propertyType)).map(f => `<li>${f}</li>`).join("")}</ul>` : ""}
         ${rec.ind?.crime != null ? `<p class="note"><b>Crime (county):</b> ${crimeLevel(rec.ind.crime)}, ${rec.ind.crime.toFixed(1)} ${crimeName().toLowerCase()} per 100,000 people a year${rec.pct?.crime != null ? `, higher than ${Math.round(rec.pct.crime)}% of US zips` : ""}. Check the city police department's crime map for the street.</p>` : ""}
         ${hz ? `<p class="note"><b>Natural hazards (FEMA, this zip):</b> ${hz.label || ""}${(hz.top || []).length ? `; highest: ${hz.top.slice(0, 3).map(([n, , lab]) => `${esc(n.toLowerCase())} (${(lab || "").toLowerCase()})`).join(", ")}` : ""}.
           ${hz.loss_rate != null ? ` Expected damage averages about ${money(d.offer * hz.loss_rate / 100)} a year at this price.` : ""}</p>` : ""}
@@ -1038,16 +1044,20 @@
   }
 
   // ---------------------------------------------------------------- natural hazards and the building
-  function ageFlags(year) {
+  // Notes on a building's age. Shared buildings (condos, apartments) get HOA notes instead of roof notes,
+  // and a year of 1900 or earlier is often a placeholder for "unknown" in listing data.
+  function ageFlags(year, shared = false) {
     if (!year) return [];
     const f = [];
+    if (year <= 1900) f.push("Year built shows as 1900 or earlier, which listing data often uses when the year is unknown. Confirm it with the listing agent.");
     if (year < 1940) f.push("Built before 1940: check wiring (knob-and-tube), plumbing and foundation.");
     if (year < 1978) f.push("Built before 1978: lead paint is possible (federal disclosure required).");
     if (year < 1981) f.push("Built before about 1980: asbestos may be in insulation, tiles or siding.");
     if (year >= 1965 && year <= 1973) f.push("1965-1973: aluminium wiring was common; ask an electrician.");
     if (year >= 1978 && year <= 1995) f.push("1978-1995: polybutylene water pipes were used in some homes.");
     const age = new Date().getFullYear() - year;
-    if (age > 20) f.push(`Asphalt-shingle roofs last about 20-30 years. If the roof is original it is ${age} years old, so ask for its age and permits.`);
+    if (shared) f.push("Roof, outside walls and structure are usually the HOA's job: ask for its reserve fund and any planned special assessments.");
+    else if (age > 20) f.push(`Asphalt-shingle roofs last about 20-30 years. If the roof is original it is ${age} years old, so ask for its age and permits.`);
     return f;
   }
   function renderHazards(o) {
