@@ -907,7 +907,8 @@
     if (d.hot) tips.push(`Homes here often sell over asking. Make a clean offer: pre-approval, 1-3% deposit, flexible closing date.`);
     if (d.soft) tips.push(`Buyers have the upper hand${rec.market?.price_drops != null ? ` (${pct(rec.market.price_drops * 100, 0)} of listings cut their price)` : ""}. Open low and ask the seller to cover closing costs or buy down your rate.`);
     if (d.stale) tips.push(`Listed ${s.daysOnMarket} days (typical here: ${Math.round(d.zipDom)}). The seller may take less.`);
-    if (d.gap > 8) tips.push(`Asking is ${d.gap.toFixed(0)}% above the value estimate, so the appraisal may come in low. Keep that contingency.`);
+    if (d.gap > 8) tips.push(`Asking is ${d.gap.toFixed(0)}% above the value estimate, so the appraisal may come in low.`);
+    if (d.walk < d.offer) tips.push(`Homes here sell for more than this one looks worth. Don't go past ${k(d.walk)}; it's fine to lose this one.`);
     if (d.gap < -8) tips.push(`Asking is below the value estimate. Expect competition and inspect carefully.`);
     if (d.flip) tips.push(`Sold for ${k(s.lastSoldPrice)} in ${s.lastSoldDate.slice(0, 4)}, now much higher: likely flipped. Ask for permits and receipts.`);
     if (d.bad.length) tips.push(`Listing mentions: ${d.bad.join(", ")}. Get repair quotes before you commit.`);
@@ -942,7 +943,7 @@
         ${s.url ? ` &middot; <a href="${esc(s.url)}" target="_blank" rel="noopener">listing</a>` : ""}${loadingFull ? " &middot; loading the full property record..." : ""}</div>
       <p class="verdict"><b>${verdict}</b>${gapTxt ? ` Asking is ${gapTxt} the value estimate (${k(d.F)}).` : ""}</p>
       <div class="offer3">
-        <div><div class="k">Open at</div><div class="v">${k(d.opening)}</div><div class="note">${pct(d.opening / d.L * 100, 1)} of asking</div></div>
+        <div><div class="k">Open at</div><div class="v">${k(Math.min(d.opening, d.walk))}</div><div class="note">${pct(Math.min(d.opening, d.walk) / d.L * 100, 1)} of asking</div></div>
         <div><div class="k">Expect to pay</div><div class="v">${k(d.offer)}</div><div class="note">typical sale price here</div></div>
         <div><div class="k">Walk away above</div><div class="v">${k(d.walk)}</div><div class="note">${d.walk === d.maxPrice ? "your budget" : "value estimate + 3%"}</div></div>
       </div>

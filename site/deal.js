@@ -212,9 +212,9 @@ const Deal = (() => {
     const hot = label === "Seller's market" || rule.m >= 1, soft = label === "Buyer's market" || rule.stale;
     if (!hot) rule.offer = Math.min(rule.offer, L);       // outside a seller's market, don't plan to pay over asking
     const opening = Math.min(rule.offer * (hot ? 1 : soft ? 0.97 : 0.985), hot ? Infinity : L * 0.99);
-    const valueWalk = Math.max(rule.offer, Number.isFinite(F) ? F : 0) * 1.03;
+    const valueWalk = (Number.isFinite(F) ? F : rule.offer) * 1.03;
     // Your budget caps it, unless even the expected price is over budget (then that's flagged instead).
-    const walk = ctx.maxPrice && ctx.maxPrice < valueWalk && ctx.maxPrice >= rule.offer ? ctx.maxPrice : valueWalk;
+    const walk = ctx.maxPrice && ctx.maxPrice < valueWalk && ctx.maxPrice >= Math.min(rule.offer, valueWalk) ? ctx.maxPrice : valueWalk;
     const gap = Number.isFinite(F) ? (L / F - 1) * 100 : NaN;
 
     // Taxes, land, building
