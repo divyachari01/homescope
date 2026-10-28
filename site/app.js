@@ -1461,7 +1461,7 @@
     if (/^[a-z]/i.test(v)) loadPlaces();               // a city name: get the search table ready
   });
   let typingTimer = null;
-  const liveUpdate = () => { clearTimeout(typingTimer); typingTimer = setTimeout(() => { saveInputs(); if (rec) renderAll(); }, 350); };
+  const liveUpdate = () => { clearTimeout(typingTimer); typingTimer = setTimeout(() => { saveInputs(); if (!$("#s-city").hidden && cityState) renderCity(); else if (rec) renderAll(); }, 350); };
   $("#purpose").addEventListener("change", () => { saveInputs(); if (rec) renderAll(); });
   document.querySelectorAll("[data-k]").forEach(el => { el.addEventListener("input", liveUpdate); el.addEventListener("change", liveUpdate); });
   $("#resetInputs").addEventListener("click", () => {
