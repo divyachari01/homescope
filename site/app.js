@@ -613,7 +613,7 @@
 
   function renderSources() {
     const a = NAT.asof || {};
-    $("#sources").innerHTML = `Data rebuilt ${NAT.built}. Sources: Freddie Mac mortgage rates via FRED (${a.rates || ""}), Zillow home value and rent indexes (${a.zillow_values || ""}),
+    $("#sources").innerHTML = `Data rebuilt ${NAT.built}. Sources: Freddie Mac mortgage rates (${a.rates || ""}), Zillow home value and rent indexes (${a.zillow_values || ""}),
       FHFA zip-code house price index (through ${a.fhfa || ""}), US Census ACS 5-year (${a.acs || ""}), County Health Rankings (crime), MIT Election Data and Science Lab,
       Nolo / NAA / NLIHC for state law, RentCast for listings. Nothing here is financial or legal advice.`;
   }

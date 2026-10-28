@@ -47,7 +47,8 @@ The site rebuilds daily, but each source publishes on its own schedule, and ever
 
 | Data | Source | Updates |
 |---|---|---|
-| Mortgage rates | Freddie Mac via FRED | weekly (Thursdays) |
+| Mortgage rates | Freddie Mac | weekly (Thursdays) |
+| Inflation (CPI) | Bureau of Labor Statistics | monthly |
 | Listings | RentCast | weekly on the free plan |
 | Home values, rents, 1-year forecast | Zillow Research | monthly (around the 16th) |
 | 50-year zip price index | FHFA | yearly |

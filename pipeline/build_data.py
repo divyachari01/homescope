@@ -35,16 +35,14 @@ LISTINGS_SRC = ROOT / "listings"          # written by fetch_listings.py
 STATE_TABLE = Path(__file__).resolve().parent / "states.csv"   # hand-kept: state law + car insurance
 
 ZILLOW = "https://files.zillowstatic.com/research/public_csvs"
-FRED = "https://fred.stlouisfed.org/graph/fredgraph.csv?id="
 
 # name: (url or list of candidate urls, local file, required?, max age in days)
 SOURCES = {
-    "rate30":  (FRED + "MORTGAGE30US", "rate30.csv", False, 0),
-    "rate15":  (FRED + "MORTGAGE15US", "rate15.csv", False, 0),
-    "pmms":    ("https://www.freddiemac.com/pmms/docs/PMMS_history.csv", "pmms.csv", False, 0),  # backup for rates
-    "cpi":     (FRED + "CPIAUCSL", "cpi.csv", False, 7),
-    "cpi_bls": ("https://download.bls.gov/pub/time.series/cu/cu.data.1.AllItems", "cpi_bls.txt", False, 7),
-    "stocks":  (FRED + "NASDAQCOM", "nasdaq.csv", False, 0),
+    # Freddie Mac's weekly 30- and 15-year mortgage rates (FRED blocks GitHub's servers, so not used)
+    "pmms":    ("https://www.freddiemac.com/pmms/docs/PMMS_history.csv", "pmms.csv", True, 0),
+    # S&P 500 monthly, for the stock-market input of the forecast (optional)
+    "stocks":  (["https://stooq.com/q/d/l/?s=%5Espx&i=m",
+                 "https://raw.githubusercontent.com/datasets/s-and-p-500/main/data/data.csv"], "sp500.csv", False, 7),
     "zhvi_all": (f"{ZILLOW}/zhvi/Zip_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv", "zhvi_all.csv", True, 3),
     "zhvi_sfr": (f"{ZILLOW}/zhvi/Zip_zhvi_uc_sfr_tier_0.33_0.67_sm_sa_month.csv", "zhvi_sfr.csv", False, 3),
     "zhvi_condo": (f"{ZILLOW}/zhvi/Zip_zhvi_uc_condo_tier_0.33_0.67_sm_sa_month.csv", "zhvi_condo.csv", False, 3),
@@ -152,15 +150,8 @@ def fail(name, why, required):
 # ---------------------------------------------------------------- loaders
 
 def load_rates():
-    """Weekly 30- and 15-year mortgage rates: FRED first, Freddie Mac's own file as backup."""
-    p30 = fetch("rate30")
-    if p30:
-        p15 = fetch("rate15")
-        return load_fred(p30), (load_fred(p15) if p15 else None)
-    p = fetch("pmms")
-    if not p:
-        sys.exit("ERROR: no mortgage rate source could be downloaded")
-    df = pd.read_csv(p)
+    """Weekly 30- and 15-year mortgage rates from Freddie Mac."""
+    df = pd.read_csv(fetch("pmms"))
     df.columns = [c.strip().lower() for c in df.columns]
     df["date"] = pd.to_datetime(df["date"], format="mixed")
     out = []
@@ -171,26 +162,41 @@ def load_rates():
 
 
 def load_cpi():
-    """Monthly consumer price index: FRED first, BLS as backup."""
-    p = fetch("cpi")
-    if p:
-        return load_fred(p)
-    p = fetch("cpi_bls")
+    """Monthly consumer price index (CPI-U, all items) from the BLS data API, 10 years per request."""
+    path = RAW / "cpi_bls.json"
+    if not (path.exists() and (OFFLINE or time.time() - path.stat().st_mtime < 7 * 86400)):
+        if OFFLINE:
+            sys.exit("ERROR: no CPI file in raw/")
+        rows = []
+        for start in range(1950, dt.date.today().year + 1, 10):
+            r = SESSION.post("https://api.bls.gov/publicAPI/v2/timeseries/data/", timeout=120,
+                             json={"seriesid": ["CUUR0000SA0"], "startyear": str(start), "endyear": str(start + 9)})
+            r.raise_for_status()
+            body = r.json()
+            if body.get("status") != "REQUEST_SUCCEEDED":
+                sys.exit(f"ERROR: BLS CPI request failed: {body.get('message')}")
+            rows += body["Results"]["series"][0]["data"]
+        path.write_text(json.dumps(rows))
+        log("  downloaded CPI")
+    rows = [r for r in json.loads(path.read_text()) if r["period"].startswith("M") and r["period"] != "M13"]
+    df = pd.DataFrame({"date": pd.to_datetime([f"{r['year']}-{r['period'][1:]}-01" for r in rows]),
+                       "value": pd.to_numeric([r["value"] for r in rows], errors="coerce")})
+    return df.dropna().sort_values("date").reset_index(drop=True)
+
+
+def load_stocks():
+    """S&P 500 yearly average (optional): returns a Series indexed by year, or None."""
+    p = fetch("stocks")
     if not p:
-        sys.exit("ERROR: no inflation (CPI) source could be downloaded")
-    df = pd.read_csv(p, sep="\t", dtype=str)
-    df.columns = [c.strip() for c in df.columns]
-    df = df[(df["series_id"].str.strip() == "CUUR0000SA0") & df["period"].str.match(r"M(0[1-9]|1[0-2])")]
-    dates = pd.to_datetime(df["year"].str.strip() + "-" + df["period"].str[1:] + "-01")
-    return pd.DataFrame({"date": dates, "value": pd.to_numeric(df["value"], errors="coerce")}).dropna()
-
-
-def load_fred(path):
-    df = pd.read_csv(path)
-    df.columns = ["date", "value"]
-    df["date"] = pd.to_datetime(df["date"])
-    df["value"] = pd.to_numeric(df["value"], errors="coerce")
-    return df.dropna()
+        return None
+    df = pd.read_csv(p)
+    df.columns = [c.strip().lower() for c in df.columns]
+    price = next((c for c in ("close", "sp500") if c in df.columns), None)
+    if price is None or "date" not in df.columns:
+        return None
+    d = pd.DataFrame({"date": pd.to_datetime(df["date"], errors="coerce"),
+                      "v": pd.to_numeric(df[price], errors="coerce")}).dropna()
+    return d.set_index("date")["v"].groupby(lambda x: x.year).mean()
 
 
 def load_zillow(path):
@@ -392,11 +398,8 @@ def run_forecast(fh_wide, zhvi_year, acs_year, r30, zip_county, county_votes, la
         if a is not None:
             acs[y] = a.set_index("zip")
     macro = pd.DataFrame({"rate": r30.set_index("date")["value"].groupby(lambda d: d.year).mean()})
-    sp = fetch("stocks")
-    if sp:
-        macro["stocks"] = load_fred(sp).set_index("date")["value"].groupby(lambda d: d.year).mean()
-    else:
-        macro["stocks"] = np.nan
+    sp = load_stocks()
+    macro["stocks"] = sp if sp is not None else np.nan
     macro = macro.to_dict()
 
     county_of = {z: c[0] for z, c in zip_county.items()}
