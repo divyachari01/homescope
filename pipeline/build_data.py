@@ -815,6 +815,7 @@ def main():
         log(f"  schools: {len(schools)} in directory")
     except Exception as e:  # noqa: BLE001
         log(f"  WARNING: schools skipped: {e!r}")
+        log(traceback.format_exc(limit=3))
 
     # ---------- machine-learning forecast (skipped with a warning if anything goes wrong)
     fc, bt = {}, {}

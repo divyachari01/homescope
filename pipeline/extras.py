@@ -281,9 +281,14 @@ def district_grades(seda_csv):
     districts in different states are comparable)."""
     df = pd.read_csv(seda_csv, dtype=str)
     df.columns = [c.strip().lower() for c in df.columns]
-    idc = next(c for c in df.columns if c in ("sedaadmin", "leaid", "sedalea"))
-    val = next(c for c in df.columns if re.fullmatch(r"cs_mn_(avg_)?all", c))
-    namec = next((c for c in df.columns if c.endswith("name")), None)
+    cols = list(df.columns)
+    idc = next((c for c in cols if c in ("sedaadmin", "leaid", "sedalea", "leaidc")), None) or \
+        next((c for c in cols if ("sedaadmin" in c or "leaid" in c) and "name" not in c), None)
+    vals = [c for c in cols if c.startswith("cs_mn") and not c.endswith(("_se", "_n")) and "_se_" not in c]
+    val = next((c for c in vals if re.fullmatch(r"cs_mn_(avg_)?(all|ol|eb)", c)), vals[0] if vals else None)
+    if not idc or not val:
+        raise ValueError(f"SEDA columns not recognised: {cols[:25]}")
+    namec = next((c for c in cols if c.endswith("name")), None)
     df[val] = pd.to_numeric(df[val], errors="coerce")
     year = pd.to_numeric(df["year"], errors="coerce") if "year" in df else None
     if year is not None:
