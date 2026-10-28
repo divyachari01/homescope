@@ -285,7 +285,9 @@ def district_growth(pool_csv):
     idc = next((c for c in cols if c in ("sedaadmin", "leaid", "sedalea")), None)
     if "subgroup" in df:
         df = df[df["subgroup"].str.lower().isin(["all", "all students"])]
-    grd = [c for c in cols if c.startswith("cs_mn_grd") and not c.endswith("_se") and "_se_" not in c]
+    if "gap" in df:
+        df = df[df["gap"].fillna("0").isin(["0", "", "0.0"])]
+    grd = [c for c in cols if c.startswith(("cs_mn_lrn", "cs_mn_grd")) and not c.endswith("_se") and "_se_" not in c]
     val = next((c for c in grd if c.endswith("_eb")), None) or next((c for c in grd if c.endswith("_ol")), None) or (grd[0] if grd else None)
     if not idc or not val:
         raise ValueError(f"SEDA pool columns not recognised: {cols[:30]}")
