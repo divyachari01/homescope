@@ -20,7 +20,7 @@
   };
 
   let NAT = null, STATES = {}, LISTED = [];
-  let rec = null, zip = "", target = { type: "all", custom: null }, listing = null, listFilter = "All", listSort = "fit", onlyAfford = true, vaastuOnly = false;
+  let rec = null, zip = "", target = { type: "all", custom: null }, listing = null, listFilter = "All", listSort = "best", onlyAfford = true, vaastuOnly = false;
   const charts = {};
 
   // ---------------------------------------------------------------- formatting
@@ -710,6 +710,24 @@
     }
   }
 
+  // ---------------------------------------------------------------- overall scores
+  // Each factor becomes 0-100 (by rank among the options shown, or a fixed scale), and the overall
+  // score is their plain average over the factors you've switched on.
+  const rankPct = vals => {
+    const a = vals.filter(Number.isFinite).sort((x, y) => x - y);
+    return v => !Number.isFinite(v) || a.length < 3 ? null : Math.round((a.filter(x => x < v).length + 0.5 * a.filter(x => x === v).length) / a.length * 100);
+  };
+  const clamp100 = v => Math.max(0, Math.min(100, Math.round(v)));
+  const blend = (parts, on) => { let t = 0, n = 0; for (const [kk, v] of Object.entries(parts)) if (v != null && on.has(kk)) { t += v; n++; } return n ? Math.round(t / n) : null; };
+  const loadSet = (key, all) => { try { const v = JSON.parse(localStorage.getItem(key)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* ignore */ } return new Set(all); };
+  const saveSet = (key, set) => { try { localStorage.setItem(key, JSON.stringify([...set])); } catch (e) { /* ignore */ } };
+  const LFACT = [["space", "Space"], ["value", "Price vs estimate"], ["shop", "Store nearby"], ["walk", "Walkable"], ["commute", "Commute"], ["quiet", "Quiet"], ["vaastu", "Vaastu"]];
+  const ZFACT = [["school", "Schools"], ["safety", "Safety"], ["risk", "Low disaster risk"], ["growth", "Growth"], ["outlook", "Price outlook"], ["room", "Room in budget"], ["commute", "Commute"]];
+  let lOn = loadSet("hc-lfact", LFACT.map(f => f[0])), zOn = loadSet("hc-zfact", ZFACT.map(f => f[0]));
+  const factorChips = (list, on, id) => `<div class="chips" id="${id}"><span class="note" style="align-self:center">What matters:</span>${list.map(([kk, l]) => `<button type="button" class="${on.has(kk) ? "on" : ""}" data-f="${kk}">${l}</button>`).join("")}</div>`;
+  const strong = (parts, on, list) => list.filter(([kk]) => on.has(kk) && parts[kk] >= 75).map(([, l]) => l.toLowerCase());
+  const HAZ = { "Very low": 100, "Relatively low": 80, "Relatively moderate": 60, "Relatively high": 35, "Very high": 10 };
+
   // ---------------------------------------------------------------- listings
   function median(a) { return Calc.percentile(a, 50); }
   function repoEditLink(file) {
@@ -718,7 +736,7 @@
     const user = h.split(".")[0], repo = location.pathname.split("/")[1] || `${user}.github.io`;
     return `https://github.com/${user}/${repo}/edit/main/${file}`;
   }
-  const WALK = [["grocery", "grocery"], ["park", "park"], ["transit", "bus/train stop"], ["pharmacy", "pharmacy"], ["food", "cafe or restaurant"], ["school", "school"]];
+  const WALK = [["grocery", "grocery / convenience store"], ["park", "park"], ["transit", "bus/train stop"], ["pharmacy", "pharmacy"], ["food", "cafe or restaurant"], ["school", "school"]];
   function walkLine(near) {
     if (!near) return "";
     const have = WALK.filter(([key]) => near[key]?.n > 0);
@@ -776,14 +794,29 @@
       const vScore = vs ? vs.pct : -1;
       return { s, group, tier, pay, estRent, inv, fits, f, vr, vs, vScore };
     });
+    // overall score for the homes you can afford
+    const fitRows = all.filter(r => r.fits);
+    const spaceR = rankPct(fitRows.map(r => r.s.squareFootage)), valueR = rankPct(fitRows.map(r => r.s.estimate && r.s.price ? r.s.estimate / r.s.price : NaN));
+    for (const r of all) {
+      if (!r.fits) { r.score = null; continue; }
+      const near = r.s.near, nz = r.s.noise, mins = work && r.s.latitude ? drive.get(keyOf(r.s.latitude, r.s.longitude)) : null;
+      r.parts = {
+        space: spaceR(r.s.squareFootage), value: valueR(r.s.estimate && r.s.price ? r.s.estimate / r.s.price : NaN),
+        shop: near?.grocery?.m != null ? clamp100(100 - (near.grocery.m - 300) / 17) : null,
+        walk: near ? Math.round(WALK.filter(([kk]) => near[kk]?.n > 0).length / WALK.length * 100) : null,
+        commute: mins != null && mins >= 0 ? clamp100(100 - (mins - 10) * 2) : null,
+        quiet: nz ? clamp100(100 - (nz.highway_m != null && nz.highway_m < 300 ? 40 : 0) - (nz.rail_m != null && nz.rail_m < 250 ? 30 : 0) - (nz.airport_km != null && nz.airport_km < 5 ? 30 : 0)) : null,
+        vaastu: r.vs ? r.vs.pct : null };
+      r.score = blend(r.parts, lOn);
+    }
     const groups = ["All", ...new Set(all.map(r => r.group))];
     const rows = all.filter(r => (listFilter === "All" || r.group === listFilter) && (!onlyAfford || r.fits)
       && (!vaastuOnly || (r.vr && r.vr[0] === "good"))
       && (!maxDrive || !work || (drive.get(keyOf(r.s.latitude, r.s.longitude)) ?? 1e9) <= maxDrive));
-    const sorters = { price: (a, b) => a.s.price - b.s.price, cash: (a, b) => (b.inv?.cashFlow ?? -1e9) - (a.inv?.cashFlow ?? -1e9),
+    const sorters = { best: (a, b) => (b.fits - a.fits) || ((b.score ?? -1) - (a.score ?? -1)) || a.s.price - b.s.price, price: (a, b) => a.s.price - b.s.price, cash: (a, b) => (b.inv?.cashFlow ?? -1e9) - (a.inv?.cashFlow ?? -1e9),
       fit: (a, b) => (b.fits - a.fits) || a.s.price - b.s.price, newest: (a, b) => (a.s.daysOnMarket ?? 1e9) - (b.s.daysOnMarket ?? 1e9),
       vaastu: (a, b) => (b.fits - a.fits) || (b.vScore - a.vScore) || a.s.price - b.s.price };
-    rows.sort(sorters[listSort] || sorters.fit);
+    rows.sort(sorters[listSort] || sorters.best);
     const nFit = all.filter(r => r.fits).length, nOriented = all.filter(r => r.f).length;
     const beds = Object.keys(rentByBeds).sort((a, b) => a - b).map(b => `<tr><td>${b == 0 ? "Studio" : b + " bed"}</td><td>${rentByBeds[b].length}</td><td>${money(median(rentByBeds[b]))}</td></tr>`).join("");
     const tag = v => v === "good" ? "pill" : v === "ok" ? "pill" : "pill warn";
@@ -791,19 +824,22 @@
       <h2>Homes for sale you can buy in ${zip}</h2>
       <div class="asof">${listing.source || "RentCast"}, fetched ${listing.fetched}: ${sale.length} for sale, ${rentals.length} for rent. ${listing.mapState === "loading" ? "Reading the street map for facing, walkability and noise..." : listing.mapState === "failed" ? "The street-map service didn't respond, so facing, walkability and noise are missing for now." : `Facing directions estimated for ${nOriented} homes from OpenStreetMap streets.`}</div>
       <p class="verdict"><b>${nFit}</b> of ${all.length} homes fit ${investor ? `your cash at ${o.invDown}% down` : "your income, savings and down payment"}.</p>
+      <p class="note">Score (0-100) averages what you pick below, compared with the other homes in your budget.</p>
       <div class="row">
         <label class="note"><input type="checkbox" id="onlyAfford" ${onlyAfford ? "checked" : ""}> Only homes I can afford</label>
         <label class="note"><input type="checkbox" id="vaastuOnly" ${vaastuOnly ? "checked" : ""}> Only Vaastu-favoured facing (north, east, north-east)</label>
         ${work ? `<label class="note">Drive to work <select id="maxDrive">${[[0, "any"], [15, "15 min or less"], [30, "30 min or less"], [45, "45 min or less"]].map(([v, l]) => `<option value="${v}" ${v === maxDrive ? "selected" : ""}>${l}</option>`).join("")}</select></label>` : `<span class="note">Add a work address under Your numbers to see drive times.</span>`}
       </div>
+      ${factorChips(LFACT, lOn, "lfact")}
       <div class="chips" id="chips">${groups.map(g => `<button type="button" class="${g === listFilter ? "on" : ""}" data-g="${esc(g)}">${esc(g)}</button>`).join("")}</div>
       <div class="row"><label class="note">Sort <select id="listSort">
-        ${[["fit", "Within my budget first"], ["vaastu", "Budget, then Vaastu score"], ["price", "Price"], ["cash", "Rental cash flow"], ["newest", "Newest"]].map(([v, l]) => `<option value="${v}" ${v === listSort ? "selected" : ""}>${l}</option>`).join("")}
+        ${[["best", "Best overall (in budget)"], ["fit", "Cheapest in budget"], ["vaastu", "Budget, then Vaastu score"], ["price", "Price"], ["cash", "Rental cash flow"], ["newest", "Newest"]].map(([v, l]) => `<option value="${v}" ${v === listSort ? "selected" : ""}>${l}</option>`).join("")}
       </select></label></div>
       ${rows.length ? "" : `<p class="note">No homes match these filters right now.</p>`}
       <div class="listings">${rows.slice(0, 60).map(r => `<div class="listing">
         ${r.s.photo && r.s.url ? `<a href="${esc(r.s.url)}" target="_blank" rel="noopener" class="photo"><img src="${esc(r.s.photo)}" alt="Listing photo" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.remove()"><span>Photo: Realtor.com &middot; open listing</span></a>` : ""}
-        <div class="price">${money(r.s.price)} ${r.fits ? `<span class="pill">${investor ? "Within your cash" : "In budget"}</span>` : ""}</div>
+        <div class="price">${money(r.s.price)} ${r.fits ? `<span class="pill">${investor ? "Within your cash" : "In budget"}</span>` : ""} ${r.score != null ? `<span class="pill">Score ${r.score}</span>` : ""}</div>
+        ${r.score != null && strong(r.parts, lOn, LFACT).length ? `<div class="note">Strong on: ${strong(r.parts, lOn, LFACT).join(", ")}</div>` : ""}
         <div>${esc(r.s.formattedAddress || "")}</div>
         <div class="note">${esc(r.group)} &middot; ${r.tier}${r.s.squareFootage >= 5000 ? " &middot; Large (5,000+ sq ft)" : ""}</div>
         <div class="note">${r.s.bedrooms ?? "?"} bd &middot; ${r.s.bathrooms ?? "?"} ba${r.s.squareFootage ? ` &middot; ${r.s.squareFootage.toLocaleString()} sq ft` : ""}${r.s.yearBuilt ? ` &middot; built ${r.s.yearBuilt}` : ""}${r.s.daysOnMarket != null ? ` &middot; ${r.s.daysOnMarket} days listed` : ""}</div>
@@ -821,6 +857,7 @@
       <p class="note">Facing = direction to the nearest street; check corner lots on the satellite view. Shortlist a home to add its rooms for the full Vaastu score.</p>
       ${beds ? `<h3>Rentals listed now</h3><table><tr><th>Size</th><th>Listings</th><th>Median rent</th></tr>${beds}</table>` : ""}`;
     el.querySelectorAll("#chips button").forEach(b => b.onclick = () => { listFilter = b.dataset.g; renderListings(inputs()); });
+    el.querySelectorAll("#lfact [data-f]").forEach(b => b.onclick = () => { const f = b.dataset.f; lOn.has(f) ? lOn.delete(f) : lOn.add(f); saveSet("hc-lfact", lOn); renderListings(inputs()); });
     $("#listSort").onchange = e => { listSort = e.target.value; renderListings(inputs()); };
     $("#onlyAfford").onchange = e => { onlyAfford = e.target.checked; renderListings(inputs()); };
     $("#vaastuOnly").onchange = e => { vaastuOnly = e.target.checked; renderListings(inputs()); };
@@ -1332,14 +1369,15 @@
   let PLACES = null;
   const loadPlaces = () => PLACES || (PLACES = getJSON("data/places.json").then(j => j.rows.map(r => Object.fromEntries(j.cols.map((c, i) => [c, r[i]])))).catch(e => { PLACES = null; throw e; }));
   const norm = t => t.toLowerCase().replace(/^st\.? /, "saint ").replace(/[^a-z ]/g, "").trim();
-  let cityState = null, citySort = "value";
+  let cityState = null, citySort = "best";
   async function citySearch(q, st) {
     $("#status").textContent = "Searching...";
     let places;
     try { places = await loadPlaces(); } catch (e) { $("#status").textContent = "City search isn't available yet."; return; }
     const m = q.match(/^(.*?)(?:,\s*([a-z]{2}))?\s*$/i), name = norm(m[1]), wantSt = (st || m[2] || "").toUpperCase();
-    let hits = places.filter(p => norm(p.city) === name);
-    if (!hits.length) hits = places.filter(p => norm(p.city).startsWith(name));
+    const isCounty = /\b(county|parish|borough)$/.test(name);
+    let hits = isCounty ? places.filter(p => norm(p.county || "") === name) : places.filter(p => norm(p.city) === name);
+    if (!hits.length && !isCounty) hits = places.filter(p => norm(p.city).startsWith(name));
     if (wantSt) hits = hits.filter(p => p.state === wantSt);
     const states = [...new Set(hits.map(p => p.state))];
     if (!hits.length) { $("#status").textContent = `No city called "${q}" found. Try a nearby city or a zip code.`; return; }
@@ -1351,12 +1389,12 @@
       $("#s-city").querySelectorAll("[data-st]").forEach(b => b.onclick = () => citySearch(q.replace(/,.*$/, ""), b.dataset.st));
       return;
     }
-    cityState = { q, st: states[0], hits };
-    history.replaceState(null, "", `?city=${encodeURIComponent(`${hits[0].city}, ${states[0]}`)}`);
+    cityState = { q, st: states[0], hits, label: isCounty ? hits[0].county : hits[0].city, filter: "All" };
+    history.replaceState(null, "", `?city=${encodeURIComponent(`${cityState.label}, ${states[0]}`)}`);
     renderCity();
   }
   function renderCity() {
-    const { hits, st } = cityState;
+    const { hits, st, label } = cityState;
     const lat = hits.reduce((a, p) => a + p.lat, 0) / hits.length, lon = hits.reduce((a, p) => a + p.lon, 0) / hits.length;
     const mi = p => 69 * Math.hypot(p.lat - lat, (p.lon - lon) * Math.cos(lat * Math.PI / 180));
     loadPlaces().then(all => {
@@ -1367,26 +1405,45 @@
       list.forEach(p => {
         const s = STATES[p.state] || {}, ins = s.home_ins ? s.home_ins / 4000 : 0.5, tax = p.tax || 1.1;
         const o = { ...base, taxRate: tax, insRate: ins, closingPct: (s.closing_fees ?? 1) + 1 + ins + tax / 4 };
-        p.max = Calc.maxPrice(o).price; p.fits = p.value && p.value <= p.max;
+        p.max = Calc.maxPrice(o).price; p.fits = !!(p.value && p.value <= p.max);
       });
-      const sorters = { value: (a, b) => (a.value || 9e9) - (b.value || 9e9), school: (a, b) => (b.school || 0) - (a.school || 0),
-        growth: (a, b) => (b.growth ?? -99) - (a.growth ?? -99), near: (a, b) => a.mi - b.mi };
-      list.sort((a, b) => (b.here - a.here) || sorters[citySort](a, b));
-      const nFit = list.filter(p => p.fits).length;
+      // overall score among the zips you can afford
+      const fit = list.filter(p => p.fits);
+      const safeR = rankPct(fit.map(p => -(p.crime ?? NaN))), growR = rankPct(fit.map(p => p.growth ?? NaN)),
+        outR = rankPct(fit.map(p => p.fc1 ?? NaN)), roomR = rankPct(fit.map(p => (p.max - p.value) / p.max));
+      if (work) fetchDrives(list.map(p => [p.lat, p.lon])).then(ch => { if (ch && !$("#s-city").hidden) renderCity(); });
+      list.forEach(p => {
+        if (!p.fits) { p.score = null; return; }
+        const mins = work ? drive.get(keyOf(p.lat, p.lon)) : null;
+        p.parts = { school: p.school ? p.school * 10 : null, safety: safeR(-(p.crime ?? NaN)), risk: HAZ[p.hazard] ?? null,
+          growth: growR(p.growth ?? NaN), outlook: outR(p.fc1 ?? NaN), room: roomR((p.max - p.value) / p.max),
+          commute: mins != null && mins >= 0 ? clamp100(100 - (mins - 10) * 2) : null };
+        p.score = blend(p.parts, zOn);
+      });
+      const cities = [...new Set(list.map(p => p.city))].sort();
+      const sorters = { best: (a, b) => (b.fits - a.fits) || ((b.score ?? -1) - (a.score ?? -1)), value: (a, b) => (a.value || 9e9) - (b.value || 9e9),
+        school: (a, b) => (b.school || 0) - (a.school || 0), growth: (a, b) => (b.growth ?? -99) - (a.growth ?? -99), near: (a, b) => a.mi - b.mi };
+      const shown = list.filter(p => cityState.filter === "All" || p.city === cityState.filter).sort(sorters[citySort] || sorters.best);
+      const nFit = shown.filter(p => p.fits).length;
       $("#status").textContent = "";
       $("#results").hidden = true;
       $("#s-city").hidden = false;
-      $("#s-city").innerHTML = `<h2>${esc(hits[0].city)}, ${st}: ${hits.length} zip code${hits.length > 1 ? "s" : ""}, plus ${list.length - hits.length} within 10 miles</h2>
-        <p class="verdict"><b>${nFit}</b> of ${list.length} have a typical home within your budget. Tap a row for the full report.</p>
-        <div class="row"><label class="note">Sort <select id="citySort">${[["value", "Cheapest first"], ["school", "Best schools"], ["growth", "Fastest growing"], ["near", "Closest"]].map(([v, l]) => `<option value="${v}" ${v === citySort ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
-        <div class="table-wrap"><table><tr><th>Zip</th><th>Typical home</th><th>You can afford</th><th>Rent</th><th>Schools</th><th>Growth</th><th>Next year</th><th>Hazard risk</th><th>Market</th><th>Miles</th></tr>
-          ${list.map(p => `<tr data-zip="${p.zip}"${p.here ? ' class="best"' : ""}><td><b>${p.zip}</b> ${esc(p.city)}</td><td>${p.value ? k(p.value) : "n/a"}</td>
-            <td>${p.fits ? '<span class="pill">Yes</span>' : `<span class="pill warn">${k(p.max)}</span>`}</td><td>${p.rent ? money(p.rent) : ""}</td>
+      $("#s-city").innerHTML = `<h2>${esc(label)}, ${st}: ${hits.length} zip code${hits.length > 1 ? "s" : ""}, plus ${list.length - hits.length} within 10 miles</h2>
+        <p class="verdict"><b>${nFit}</b> of ${shown.length} have a typical home in your budget. Tap a row for the full report.</p>
+        <div class="chips" id="cityChips">${["All", ...cities].map(c => `<button type="button" class="${c === cityState.filter ? "on" : ""}" data-c="${esc(c)}">${esc(c)}</button>`).join("")}</div>
+        ${factorChips(ZFACT, zOn, "zfact")}
+        <div class="row"><label class="note">Sort <select id="citySort">${[["best", "Best overall (in budget)"], ["value", "Cheapest first"], ["school", "Best schools"], ["growth", "Fastest growing"], ["near", "Closest"]].map(([v, l]) => `<option value="${v}" ${v === citySort ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
+        <div class="table-wrap"><table><tr><th>Zip</th><th>City, county</th><th>Score</th><th>Typical home</th><th>In budget?</th><th>Schools</th><th>Growth</th><th>Next year</th><th>Disaster risk</th><th>Rent</th><th>Miles</th></tr>
+          ${shown.map(p => `<tr data-zip="${p.zip}"${p.here ? ' class="best"' : ""}><td><b>${p.zip}</b></td><td>${esc(p.city)}${p.county ? `, <span class="note">${esc(p.county)}</span>` : ""}</td>
+            <td>${p.score != null ? `<b>${p.score}</b>` : ""}</td><td>${p.value ? k(p.value) : "n/a"}</td>
+            <td>${p.fits ? '<span class="pill">Yes</span>' : `<span class="pill warn">max ${k(p.max)}</span>`}</td>
             <td>${p.school ? p.school + "/10" : ""}</td><td>${p.growth != null ? signed(p.growth) : ""}</td><td>${p.fc1 != null ? signed(p.fc1) : ""}</td>
-            <td>${esc(p.hazard || "")}</td><td>${esc((p.market || "").replace(" market", ""))}</td><td>${p.mi.toFixed(1)}</td></tr>`).join("")}
+            <td>${esc(p.hazard || "")}</td><td>${p.rent ? money(p.rent) : ""}</td><td>${p.mi.toFixed(1)}</td></tr>`).join("")}
         </table></div>
-        <p class="note">Highlighted rows are in ${esc(hits[0].city)}. "You can afford" uses your numbers with each zip's own tax rate.</p>`;
+        <p class="note">Score (0-100) averages what you pick, compared with the other zips here that fit your budget. Highlighted rows are in ${esc(label)}.</p>`;
       $("#citySort").onchange = e => { citySort = e.target.value; renderCity(); };
+      $("#s-city").querySelectorAll("[data-c]").forEach(b => b.onclick = () => { cityState.filter = b.dataset.c; renderCity(); });
+      $("#s-city").querySelectorAll("#zfact [data-f]").forEach(b => b.onclick = () => { const f = b.dataset.f; zOn.has(f) ? zOn.delete(f) : zOn.add(f); saveSet("hc-zfact", zOn); renderCity(); });
       $("#s-city").querySelectorAll("tr[data-zip]").forEach(tr => tr.onclick = () => { $("#zip").value = tr.dataset.zip; lookup(); window.scrollTo(0, 0); });
     });
   }

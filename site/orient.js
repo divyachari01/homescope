@@ -111,7 +111,7 @@ const Orient = (() => {
       for (const f of t.poi || []) {
         const c = f.rings[0]?.[0]; if (!c) continue;
         const cl = f.props.class, sub = f.props.subclass;
-        if (cl === "grocery" || ["supermarket", "grocery", "greengrocer"].includes(sub)) places.grocery.push(c);
+        if (cl === "grocery" || ["supermarket", "grocery", "greengrocer", "convenience"].includes(sub)) places.grocery.push(c);
         else if (cl === "park") places.park.push(c);
         else if (cl === "bus" || ["station", "halt", "tram_stop", "bus_stop"].includes(sub)) places.transit.push(c);
         else if (cl === "pharmacy" || sub === "pharmacy") places.pharmacy.push(c);

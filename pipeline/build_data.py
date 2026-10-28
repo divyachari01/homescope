@@ -1118,9 +1118,10 @@ def main():
                          num(r.get("zori_now") or (r.get("acs") or {}).get("rent")),
                          num((r.get("acs") or {}).get("tax_rate"), 2), sd.get("n10"),
                          num((r.get("growth") or {}).get("rate"), 1), (r.get("hazard") or {}).get("label"),
-                         (r.get("market") or {}).get("label"), num(((r.get("fc") or {}).get("1") or [None, None])[1], 1)])
+                         (r.get("market") or {}).get("label"), num(((r.get("fc") or {}).get("1") or [None, None])[1], 1),
+                         r.get("county"), num((r.get("ind") or {}).get("crime"), 1)])
     (OUT / "places.json").write_text(json.dumps({"cols": ["zip", "city", "state", "lat", "lon", "value", "rent", "tax",
-        "school", "growth", "hazard", "market", "fc1"], "rows": rows}, separators=(",", ":")))
+        "school", "growth", "hazard", "market", "fc1", "county", "crime"], "rows": rows}, separators=(",", ":")))
     log(f"  city search table: {len(rows)} zips")
 
     # ---------- plain pages for search engines (one per zip and state) and the sitemap
