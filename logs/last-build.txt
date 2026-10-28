@@ -5,113 +5,52 @@ FHFA
 Census
   ACS 2025 not available: HTTP 404, reply: '<!doctype html><html lang="en"><head><title>HTTP Status 404 ? Not Found</title><style type="text/css">
 Crime and elections
-  WARNING: could not read County Health Rankings file: expected columns not found; first columns: ['State FIPS Code', 'County FIPS Code', '5-digit FIPS Code', 'State Abbreviation', 'Name', 'Release Year', 'County Clustered (Yes=1/No=0)', 'Premature Death raw value']
+  crime measure used: Homicides raw value
   WARNING: elections download failed: 400 Client Error: Bad Request for url: https://dataverse.harvard.edu/api/access/datafile/13573089
+  elections from the GitHub backup
 Computing indicators
 Extra data
   WARNING: skipping nri: 403 Client Error: Forbidden for url: https://www.fema.gov:443/emergency-managers/practitioners/resilience-analysis-and-planning-tool
-  downloaded NRI (ArcGIS copy)
   WARNING: skipping redfin: 403 Client Error: Forbidden for url: https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_market_tracker/zip_code_market_tracker.tsv000.gz
-  downloaded realtor
 Forecast model
-/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
   result = getattr(ufunc, method)(*inputs, **kwargs)
-/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
   result = getattr(ufunc, method)(*inputs, **kwargs)
-/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
   result = getattr(ufunc, method)(*inputs, **kwargs)
-/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
   result = getattr(ufunc, method)(*inputs, **kwargs)
-/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
   result = getattr(ufunc, method)(*inputs, **kwargs)
-/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
   result = getattr(ufunc, method)(*inputs, **kwargs)
-/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
   result = getattr(ufunc, method)(*inputs, **kwargs)
-/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
   result = getattr(ufunc, method)(*inputs, **kwargs)
-/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
   result = getattr(ufunc, method)(*inputs, **kwargs)
-/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
   result = getattr(ufunc, method)(*inputs, **kwargs)
-/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
   result = getattr(ufunc, method)(*inputs, **kwargs)
-/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
   result = getattr(ufunc, method)(*inputs, **kwargs)
-/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
   result = getattr(ufunc, method)(*inputs, **kwargs)
-  WARNING: forecast skipped: ValueError('window shape cannot be larger than input array shape')
-joblib.externals.loky.process_executor._RemoteTraceback: 
-"""
-Traceback (most recent call last):
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/joblib/_utils.py", line 109, in __call__
-    return self.func(**kwargs)
-           ^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/joblib/parallel.py", line 607, in __call__
-    return [func(*args, **kwargs) for func, args, kwargs in self.items]
-            ^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/sklearn/utils/parallel.py", line 184, in __call__
-    return self.function(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/sklearn/ensemble/_hist_gradient_boosting/binning.py", line 82, in _find_binning_thresholds
-    bin_thresholds = sliding_window_view(distinct_values, 2).mean(axis=1)
-                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/numpy/lib/_stride_tricks_impl.py", line 439, in sliding_window_view
-    raise ValueError(
-ValueError: window shape cannot be larger than input array shape
-"""
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/runner/work/homescope/homescope/pipeline/build_data.py", line 698, in main
-    fc, bt, national["model"] = run_forecast(fh_wide, zhvi_year, acs_year, r30, zip_county,
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/runner/work/homescope/homescope/pipeline/build_data.py", line 486, in run_forecast
-    preds, past, summary = forecast.run(P, acs, macro, votes, static, market or {}, log=log)
-                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/runner/work/homescope/homescope/pipeline/forecast.py", line 164, in run
-    q = {qq: fit(Xtr, ytr, qq).predict(Xte) for qq in QUANTILES}
-             ^^^^^^^^^^^^^^^^^
-  File "/home/runner/work/homescope/homescope/pipeline/forecast.py", line 128, in fit
-    return m.fit(X, y)
-           ^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/sklearn/base.py", line 1403, in wrapper
-    return fit_method(estimator, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/sklearn/ensemble/_hist_gradient_boosting/gradient_boosting.py", line 603, in fit
-    X_binned_train = self._bin_data(
-                     ^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/sklearn/ensemble/_hist_gradient_boosting/gradient_boosting.py", line 1122, in _bin_data
-    X_binned = self._bin_mapper.fit_transform(
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/sklearn/utils/_set_output.py", line 327, in wrapped
-    data_to_wrap = f(self, X, *args, **kwargs)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/sklearn/base.py", line 969, in fit_transform
-    return self.fit(X, **fit_params).transform(X)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/sklearn/ensemble/_hist_gradient_boosting/binning.py", line 287, in fit
-    non_cat_thresholds = Parallel(n_jobs=self.n_threads, backend="threading")(
-                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/sklearn/utils/parallel.py", line 91, in __call__
-    return super().__call__(iterable_with_config_and_warning_filters)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/joblib/parallel.py", line 2098, in __call__
-    return output if self.return_generator else list(output)
-                                                ^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/joblib/parallel.py", line 1704, in _get_outputs
-    yield from self._retrieve()
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/joblib/parallel.py", line 1806, in _retrieve
-    self._raise_error_fast()
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/joblib/parallel.py", line 1885, in _raise_error_fast
-    error_job.get_result(self.timeout)
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/joblib/parallel.py", line 780, in get_result
-    return self._return_or_raise()
-           ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/joblib/parallel.py", line 795, in _return_or_raise
-    raise self._result
-ValueError: window shape cannot be larger than input array shape
-
+  1-yr test 2021->2022: model off by 5.1 pts/yr, trend-only off by 9.76, actual inside range 58.4%
+  1-yr test 2022->2023: model off by 5.67 pts/yr, trend-only off by 5.95, actual inside range 51.4%
+  1-yr test 2023->2024: model off by 4.24 pts/yr, trend-only off by 5.02, actual inside range 79.6%
+  1-yr test 2024->2025: model off by 4.19 pts/yr, trend-only off by 5.55, actual inside range 71.8%
+  1-yr test 2025->2026: model off by 3.04 pts/yr, trend-only off by 5.0, actual inside range 81.5%
+  3-yr test 2019->2022: model off by 5.95 pts/yr, trend-only off by 8.22, actual inside range 10.1%
+  3-yr test 2020->2023: model off by 6.16 pts/yr, trend-only off by 7.6, actual inside range 12.8%
+  3-yr test 2021->2024: model off by 4.51 pts/yr, trend-only off by 4.72, actual inside range 28.8%
+  3-yr test 2022->2025: model off by 3.89 pts/yr, trend-only off by 3.99, actual inside range 41.0%
+  3-yr test 2023->2026: model off by 4.35 pts/yr, trend-only off by 4.11, actual inside range 21.7%
+  5-yr test 2019->2024: model off by 4.29 pts/yr, trend-only off by 6.26, actual inside range 17.8%
+  5-yr test 2020->2025: model off by 4.17 pts/yr, trend-only off by 5.29, actual inside range 19.9%
+  5-yr test 2021->2026: model off by 2.65 pts/yr, trend-only off by 3.48, actual inside range 42.9%
 Writing zip files
-Done: 33785 zip codes in 894 files. Sources as of: {'rates': '2026-10-22', 'zillow_values': '2026-09', 'zillow_rents': '2026-09', 'zillow_forecast_base': '2026-09-30', 'fhfa': 2025, 'acs': '2020-2024', 'acs_old': '2010-2014', 'hazards': 'FEMA National Risk Index', 'market': '2026-09', 'market_source': 'Realtor.com', 'fed': '2026-10'}
+Done: 33785 zip codes in 894 files. Sources as of: {'rates': '2026-10-22', 'zillow_values': '2026-09', 'zillow_rents': '2026-09', 'zillow_forecast_base': '2026-09-30', 'fhfa': 2025, 'acs': '2020-2024', 'acs_old': '2010-2014', 'crime': 'County Health Rankings 2025, homicides', 'elections': 2024, 'hazards': 'FEMA National Risk Index', 'market': '2026-09', 'market_source': 'Realtor.com', 'fed': '2026-10'}
