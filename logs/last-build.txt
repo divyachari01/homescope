@@ -14,9 +14,7 @@ Extra data
   WARNING: skipping redfin: 403 Client Error: Forbidden for url: https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_market_tracker/zip_code_market_tracker.tsv000.gz
 /home/runner/work/homescope/homescope/pipeline/build_data.py:473: DtypeWarning: Columns (7,16,25) have mixed types. Specify dtype option on import or set low_memory=False.
   df = pd.read_csv(path, dtype={"area_fips": str, "own_code": str, "agglvl_code": str})
-  downloaded seda_pool
-  WARNING: SEDA learning rates skipped: ValueError("SEDA pool columns not recognised: ['sedaadmin', 'sedaadminname', 'fips', 'stateabb', 'multi_comp', 'subcat', 'subgroup', 'gap', 'gradecenter', 'tot_asmts', 'cellcount', 'mn_asmts', 'pooled_years', 'year_min', 'year_max', 'cs_mn_avg_ol', 'cs_mn_lrn_ol', 'cs_mn_tav_ol', 'cs_mn_tlr_ol', 'cs_mn_mth_ol', 'cs_mn_avg_ol_se', 'cs_mn_lrn_ol_se', 'cs_mn_tav_ol_se', 'cs_mn_tlr_ol_se', 'cs_mn_mth_ol_se', 'cs_mn_avg_ol_se_adj', 'cs_mn_lrn_ol_se_adj', 'cs_mn_tav_ol_se_adj', 'cs_mn_tlr_ol_se_adj', 'cs_mn_mth_ol_se_adj']")
-  district progress scores: 0
+  district progress scores: 8780
   schools: 102178 in directory
 Population and building growth
   permits: US total 1,431,616 units in 2025 (expect ~1.4M)
@@ -61,7 +59,6 @@ Forecast model
   5-yr test 2019->2024: model off by 4.29 pts/yr, trend-only off by 6.26, actual inside range 17.8%
   5-yr test 2020->2025: model off by 4.17 pts/yr, trend-only off by 5.29, actual inside range 19.9%
   5-yr test 2021->2026: model off by 2.65 pts/yr, trend-only off by 3.48, actual inside range 42.9%
-  downloaded geonames
   place names for 41488 zips (GeoNames)
 Writing zip files
   city search table: 32789 zips
