@@ -1,6 +1,13 @@
 National series
-  WARNING: skipping rate30: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=300)
   downloaded pmms
-  WARNING: skipping cpi: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=300)
-  WARNING: skipping cpi_bls: 403 Client Error: Forbidden for url: https://download.bls.gov/pub/time.series/cu/cu.data.1.AllItems
-ERROR: no inflation (CPI) source could be downloaded
+  downloaded CPI
+Zillow
+  downloaded zhvi_all
+  downloaded zhvi_sfr
+  downloaded zhvi_condo
+  downloaded zhvi_bottom
+  downloaded zhvi_top
+  downloaded zori
+  downloaded zhvf
+FHFA
+ERROR: required source fhfa unavailable: 404 Client Error: Not Found for url: https://www.fhfa.gov/hpi/download/annually/hpi_at_bdl_zip5.xlsx
