@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Divya Chari
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Machine-learning price forecast for every zip code.
 
 In simple words: for each past year from 2014 on, we describe every zip with what was

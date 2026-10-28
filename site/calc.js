@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Divya Chari
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Pure math used by the page. No DOM code here.
 const Calc = (() => {
   // Monthly principal + interest on a fixed-rate loan.

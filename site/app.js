@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Divya Chari
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // HomeScope page logic. Data files come from pipeline/build_data.py.
 (() => {
   const $ = s => document.querySelector(s);
@@ -191,6 +193,7 @@
     renderLaw();
     renderSun();
     renderListings(o);
+    renderShortlist();
     renderInspected();
     renderSchools();
   }
@@ -237,6 +240,7 @@
       out.push(card(`${src.years[i]} president (${v ? "county" : "state"})`, `${m > 0 ? "R" : "D"} +${Math.abs(m).toFixed(0)}`,
         `R ${src.rep[i]}% &middot; D ${src.dem[i]}%` + (v && sv ? ` &middot; state ${sv.rep[sv.rep.length - 1] > sv.dem[sv.dem.length - 1] ? "R" : "D"} +${Math.abs(sv.rep[sv.rep.length - 1] - sv.dem[sv.dem.length - 1]).toFixed(0)}` : "")));
     }
+    if (rec.schools?.district) out.push(card("School district", `Grade ${rec.schools.district.grade}`, `${esc(rec.schools.district.name)}: test scores above ${Math.round(rec.schools.district.pct)}% of US districts`));
     const lean = lawLean(STATES[rec.state]?.law);
     if (lean) out.push(card("Landlord-tenant law", lean.label, esc(STATES[rec.state].name)));
     if (rec.gent) out.push(card("Neighborhood change", rec.gent.replace("Signs of gentrification", "Gentrifying"), "10-year Census comparison"));
@@ -655,8 +659,9 @@
       const inv = estRent ? Calc.rental(s.price, estRent, investorOpts(oo)) : null;
       const fits = investor ? s.price * (o.invDown + o.closingPct) / 100 <= o.cash : s.price <= Calc.maxPrice(oo).price;
       const f = s.orient?.facing, vr = facingRating(f);
-      const vScore = vr ? { good: 3, ok: 2, mixed: 1, poor: 0 }[vr[0]] - (s.orient.tjunction ? 1 : 0) : 1;
-      return { s, group, tier, pay, estRent, inv, fits, f, vr, vScore };
+      const vs = vaastuScore({ facing: f, tjunction: s.orient ? !!s.orient.tjunction : undefined });
+      const vScore = vs ? vs.pct : -1;
+      return { s, group, tier, pay, estRent, inv, fits, f, vr, vs, vScore };
     });
     const groups = ["All", ...new Set(all.map(r => r.group))];
     const rows = all.filter(r => (listFilter === "All" || r.group === listFilter) && (!onlyAfford || r.fits)
@@ -678,32 +683,32 @@
       </div>
       <div class="chips" id="chips">${groups.map(g => `<button type="button" class="${g === listFilter ? "on" : ""}" data-g="${esc(g)}">${esc(g)}</button>`).join("")}</div>
       <div class="row"><label class="note">Sort <select id="listSort">
-        ${[["fit", "Within my budget first"], ["vaastu", "Budget, then best Vaastu / Feng Shui"], ["price", "Price"], ["cash", "Rental cash flow"], ["newest", "Newest"]].map(([v, l]) => `<option value="${v}" ${v === listSort ? "selected" : ""}>${l}</option>`).join("")}
+        ${[["fit", "Within my budget first"], ["vaastu", "Budget, then Vaastu score"], ["price", "Price"], ["cash", "Rental cash flow"], ["newest", "Newest"]].map(([v, l]) => `<option value="${v}" ${v === listSort ? "selected" : ""}>${l}</option>`).join("")}
       </select></label></div>
       ${rows.length ? "" : `<p class="note">No homes match these filters right now.</p>`}
       <div class="listings">${rows.slice(0, 60).map(r => `<div class="listing">
-        ${r.s.photo ? `<img src="${esc(r.s.photo)}" alt="" loading="lazy" style="width:100%;height:150px;object-fit:cover;border-radius:6px;margin-bottom:6px">` : ""}
         <div class="price">${money(r.s.price)} ${r.fits ? `<span class="pill">${investor ? "Within your cash" : "In budget"}</span>` : ""}</div>
         <div>${esc(r.s.formattedAddress || "")}</div>
         <div class="note">${esc(r.group)} &middot; ${r.tier}${r.s.squareFootage >= 5000 ? " &middot; Large (5,000+ sq ft)" : ""}</div>
         <div class="note">${r.s.bedrooms ?? "?"} bd &middot; ${r.s.bathrooms ?? "?"} ba${r.s.squareFootage ? ` &middot; ${r.s.squareFootage.toLocaleString()} sq ft` : ""}${r.s.yearBuilt ? ` &middot; built ${r.s.yearBuilt}` : ""}${r.s.daysOnMarket != null ? ` &middot; ${r.s.daysOnMarket} days listed` : ""}</div>
         <div>Owner cost ${money(r.pay)}/mo${r.s.hoa ? ` (incl. HOA ${money(r.s.hoa)})` : ""}</div>
         ${investor && r.inv ? `<div class="note">If rented at ~${money(r.estRent)}: cash flow ${money(r.inv.cashFlow)}/mo, cap rate ${pct(r.inv.capRate, 1)}</div>` : ""}
-        ${r.f ? `<div style="margin-top:4px">Faces <b>${DIR_NAMES[r.f]}</b>${r.s.orient.street ? ` onto ${esc(r.s.orient.street)}` : ""} <span class="${tag(r.vr[0])}">${r.vr[1]}</span></div>
-          <div class="note">${FACING_LIGHT[r.f]}${r.s.orient.tjunction ? " <b>Feng Shui:</b> a street ends pointing at this house (T-junction)." : ""}${r.s.orient.corner ? " Corner lot." : ""}</div>` : ""}
-        ${r.s.latitude ? `<div class="note">${r.s.url ? `<a href="${esc(r.s.url)}" target="_blank" rel="noopener">Listing</a> &middot; ` : ""}<a href="https://www.google.com/maps/@${r.s.latitude},${r.s.longitude},60m/data=!3m1!1e3" target="_blank" rel="noopener">Satellite view</a>${r.f ? ` &middot; <button type="button" class="link" data-face="${r.f}">Check rooms in Vaastu</button>` : ""}</div>` : ""}
+        ${r.f ? `<div style="margin-top:4px">Faces <b>${DIR_NAMES[r.f]}</b>${r.s.orient.street ? ` onto ${esc(r.s.orient.street)}` : ""}. Vaastu ${scorePill(r.vs?.pct)} <span class="note">(from ${r.vs?.checks || 0} of 8 checks)</span></div>
+          <div class="note">${r.vr[1]}. ${FACING_LIGHT[r.f]}${r.s.orient.tjunction ? " <b>Feng Shui:</b> a street ends pointing at this house (T-junction)." : ""}${r.s.orient.corner ? " Corner lot." : ""}</div>` : ""}
+        ${r.s.latitude ? `<div class="note">${r.s.url ? `<a href="${esc(r.s.url)}" target="_blank" rel="noopener">Listing</a> &middot; ` : ""}<a href="https://www.google.com/maps/@${r.s.latitude},${r.s.longitude},60m/data=!3m1!1e3" target="_blank" rel="noopener">Satellite view</a></div>` : ""}
+        <button type="button" class="link" data-short="${esc(r.s.id || r.s.formattedAddress)}">${shortlist[r.s.id || r.s.formattedAddress] ? "&#9733; Shortlisted (tap to remove)" : "&#9734; Shortlist for full Vaastu check"}</button>
       </div>`).join("")}</div>
       ${rows.length > 60 ? `<p class="note">Showing 60 of ${rows.length}.</p>` : ""}
-      <p class="note">Facing is estimated as the direction from the house to its nearest street, so check corner lots and long driveways on the satellite view. Room layout isn't in listing data; use "Check rooms in Vaastu" to fill it in from the listing photos.</p>
+      <p class="note">Facing is estimated as the direction from the house to its nearest street, so check corner lots and long driveways on the satellite view. The Vaastu % on each card uses only what's known from the map (facing and streets); shortlist a home to add its rooms for the full score.</p>
       ${beds ? `<h3>Rentals listed now</h3><table><tr><th>Size</th><th>Listings</th><th>Median rent</th></tr>${beds}</table>` : ""}`;
     el.querySelectorAll("#chips button").forEach(b => b.onclick = () => { listFilter = b.dataset.g; renderListings(inputs()); });
     $("#listSort").onchange = e => { listSort = e.target.value; renderListings(inputs()); };
     $("#onlyAfford").onchange = e => { onlyAfford = e.target.checked; renderListings(inputs()); };
     $("#vaastuOnly").onchange = e => { vaastuOnly = e.target.checked; renderListings(inputs()); };
-    el.querySelectorAll("[data-face]").forEach(b => b.onclick = () => {
-      sunInputs.facing = b.dataset.face;
-      try { localStorage.setItem("hc-sun", JSON.stringify(sunInputs)); } catch (e) { /* ignore */ }
-      renderSun(); $("#s-sun").scrollIntoView({ behavior: "smooth" });
+    el.querySelectorAll("[data-short]").forEach(b => b.onclick = () => {
+      const s = sale.find(x => (x.id || x.formattedAddress) === b.dataset.short);
+      if (s) toggleShortlist(s);
+      renderListings(inputs()); renderShortlist();
     });
   }
 
@@ -783,8 +788,103 @@
     NE: "The front gets early morning sun only.", NW: "The front gets late-evening sun in summer.", SE: "The front gets morning and midday sun.", SW: "The front gets the hot afternoon sun.",
   };
   const DIR_NAMES = { N: "North", NE: "North-east", E: "East", SE: "South-east", S: "South", SW: "South-west", W: "West", NW: "North-west" };
-  let sunInputs = { facing: "", kitchen: "", bedroom: "", prayer: "", shape: "", fs: {} };
-  try { sunInputs = Object.assign(sunInputs, JSON.parse(localStorage.getItem("hc-sun") || "{}")); } catch (e) { /* ignore */ }
+  // ---------------------------------------------------------------- Vaastu and Feng Shui scoring
+  // Points for each Vaastu check (traditional guidance). The score is points earned out of the
+  // points possible for the checks that are known, so it says how many checks it is based on.
+  const VAASTU = {
+    facing: { label: "Entrance / facing", max: 25, pts: { N: 25, E: 25, NE: 25, NW: 15, W: 15, S: 8, SE: 8, SW: 0 },
+      why: "North, east and north-east entrances are favoured; south-west is avoided." },
+    road: { label: "No street pointing at the house (veedhi shoola)", max: 10, why: "A road ending straight at the plot is avoided." },
+    kitchen: { label: "Kitchen", max: 15, pts: { SE: 15, NW: 10, E: 5, S: 5, N: 2, W: 2, NE: 0, SW: 0 }, why: "South-east (fire corner) is best, north-west second." },
+    bedroom: { label: "Main bedroom", max: 15, pts: { SW: 15, S: 8, W: 8, NW: 4, SE: 2, N: 2, E: 2, NE: 0 }, why: "South-west is best for the main bedroom." },
+    puja: { label: "Prayer room", max: 10, pts: { NE: 10, N: 6, E: 6, NW: 2, W: 2, SE: 0, S: 0, SW: 0 }, why: "North-east is the place for prayer." },
+    toilet: { label: "No toilet in the north-east", max: 10, why: "Toilets in the north-east corner are avoided." },
+    stairs: { label: "Staircase", max: 5, pts: { S: 5, W: 5, SW: 5, SE: 3, NW: 3, N: 1, E: 1, NE: 0 }, why: "Stairs belong in the south, west or south-west." },
+    shape: { label: "Plot shape", max: 10, why: "Square or rectangular plots are preferred." },
+  };
+  const FS_ITEMS = {
+    tjunction: "A street ends pointing at the house (T-junction)",
+    aligned: "Front door lines up straight with a back door or big back window",
+    stairs: "Staircase faces the front door directly",
+    bathdoor: "A bathroom is right next to or facing the front door",
+    garage: "A bedroom sits over the garage",
+    below: "House sits below road level or at the bottom of a slope",
+    irregular: "Irregular, L-shaped or missing-corner floor plan",
+  };
+  // h: { facing, tjunction, rooms: {kitchen, bedroom, puja, toilet ("yes"/"no"), stairs, shape}, fs: {...} }
+  function vaastuScore(h) {
+    const r = h.rooms || {};
+    const got = [], known = [];
+    const add = (key, pts) => { known.push(VAASTU[key].max); got.push(pts); };
+    if (h.facing) add("facing", VAASTU.facing.pts[h.facing] ?? 0);
+    if (h.tjunction !== undefined) add("road", h.tjunction ? 0 : 10);
+    for (const key of ["kitchen", "bedroom", "puja", "stairs"]) if (r[key]) add(key, VAASTU[key].pts[r[key]] ?? 0);
+    if (r.toilet) add("toilet", r.toilet === "no" ? 10 : 0);
+    if (r.shape) add("shape", r.shape === "irregular" ? 0 : 10);
+    const max = known.reduce((a, b) => a + b, 0);
+    return max ? { pct: Math.round(got.reduce((a, b) => a + b, 0) / max * 100), checks: known.length, of: 8 } : null;
+  }
+  function fengShui(h) {
+    const fs = { ...(h.fs || {}) };
+    if (h.tjunction !== undefined) fs.tjunction = !!h.tjunction;
+    const answered = Object.keys(fs).filter(kk => fs[kk] !== undefined);
+    const concerns = answered.filter(kk => fs[kk]);
+    return { concerns, answered: answered.length, pct: answered.length ? Math.round((1 - concerns.length / Object.keys(FS_ITEMS).length) * 100) : null };
+  }
+  const scorePill = v => v == null ? "" : `<span class="${v >= 70 ? "pill" : "pill warn"}">${v}%</span>`;
+
+  // ---------------------------------------------------------------- shortlist (saved in this browser)
+  let shortlist = {};
+  try { shortlist = JSON.parse(localStorage.getItem("hc-shortlist") || "{}"); } catch (e) { /* ignore */ }
+  const saveShortlist = () => { try { localStorage.setItem("hc-shortlist", JSON.stringify(shortlist)); } catch (e) { /* ignore */ } };
+  function toggleShortlist(s) {
+    const id = s.id || s.formattedAddress;
+    if (shortlist[id]) delete shortlist[id];
+    else shortlist[id] = { id, address: s.formattedAddress, zip, price: s.price, url: s.url, lat: s.latitude, lon: s.longitude,
+      facing: s.orient?.facing || "", tjunction: s.orient ? !!s.orient.tjunction : undefined, corner: !!s.orient?.corner, rooms: {}, fs: {} };
+    saveShortlist();
+  }
+  function renderShortlist() {
+    const el = $("#s-shortlist"), items = Object.values(shortlist);
+    const dirSel = (h, key, val) => `<select data-sl="${esc(h.id)}" data-key="${key}"><option value="">Not sure</option>${DIRS.map(d => `<option value="${d}" ${val === d ? "selected" : ""}>${DIR_NAMES[d]}</option>`).join("")}</select>`;
+    const yn = (h, key, val, labels) => `<select data-sl="${esc(h.id)}" data-key="${key}"><option value="">Not sure</option>${labels.map(([v, l]) => `<option value="${v}" ${val === v ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+    el.innerHTML = `<h2>Your shortlist</h2>
+      <p class="note">Tap "Shortlist" on any listing to keep it here (saved in this browser only). Fill in the rooms from the listing photos or a visit to get the full Vaastu score.</p>
+      ${items.length ? "" : `<p class="note">Nothing shortlisted yet.</p>`}
+      <div class="listings">${items.map(h => {
+        const v = vaastuScore(h), f = fengShui(h), r = h.rooms || {};
+        return `<div class="listing">
+          <div class="price">${h.price ? money(h.price) : ""} <button type="button" class="link" data-unlist="${esc(h.id)}">Remove</button></div>
+          <div>${esc(h.address || "")}</div>
+          <div class="note">${h.url ? `<a href="${esc(h.url)}" target="_blank" rel="noopener">Listing</a> &middot; ` : ""}${h.lat ? `<a href="https://www.google.com/maps/@${h.lat},${h.lon},60m/data=!3m1!1e3" target="_blank" rel="noopener">Satellite view</a>` : ""}</div>
+          <p style="margin:6px 0">Vaastu ${scorePill(v?.pct)} <span class="note">(${v ? v.checks : 0} of 8 checks)</span> &middot; Feng Shui ${scorePill(f.pct)} <span class="note">(${f.concerns.length} concern${f.concerns.length === 1 ? "" : "s"})</span></p>
+          <div class="grid-inputs" style="grid-template-columns:1fr 1fr">
+            <label>Faces${dirSel(h, "facing", h.facing)}</label>
+            <label>Kitchen${dirSel(h, "kitchen", r.kitchen)}</label>
+            <label>Main bedroom${dirSel(h, "bedroom", r.bedroom)}</label>
+            <label>Prayer room${dirSel(h, "puja", r.puja)}</label>
+            <label>Staircase${dirSel(h, "stairs", r.stairs)}</label>
+            <label>Toilet in north-east?${yn(h, "toilet", r.toilet, [["no", "No"], ["yes", "Yes"]])}</label>
+            <label>Plot shape${yn(h, "shape", r.shape, [["square", "Square"], ["rect", "Rectangle"], ["irregular", "Irregular / cut corner"]])}</label>
+          </div>
+          <div class="note" style="margin-top:6px">Feng Shui, tick what applies:</div>
+          ${Object.entries(FS_ITEMS).filter(([kk]) => kk !== "tjunction").map(([kk, lab]) => `<label class="note" style="display:block"><input type="checkbox" data-slfs="${esc(h.id)}" data-key="${kk}" ${h.fs?.[kk] ? "checked" : ""}> ${lab}</label>`).join("")}
+          ${h.tjunction ? `<div class="note"><b>From the street map:</b> a street ends pointing at this house.</div>` : ""}
+          ${f.concerns.length ? `<div class="note">Concerns: ${f.concerns.map(kk => FS_ITEMS[kk].toLowerCase()).join("; ")}.</div>` : ""}
+        </div>`; }).join("")}</div>
+      ${items.length ? `<details class="sub"><summary>How the scores work</summary>
+        <table>${Object.values(VAASTU).map(x => `<tr><td>${x.label} (${x.max} pts)</td><td style="white-space:normal;text-align:left">${x.why}</td></tr>`).join("")}</table>
+        <p class="note">The Vaastu score is points earned out of the points possible for the checks you've answered. Feng Shui is the share of the 7 common concerns that don't apply. Personal Feng Shui directions also depend on your birth year (Kua number), which isn't covered. These are traditional guides, kept separate from the price, risk and forecast numbers.</p></details>` : ""}`;
+    el.querySelectorAll("[data-sl]").forEach(s => s.onchange = () => {
+      const h = shortlist[s.dataset.sl];
+      if (s.dataset.key === "facing") h.facing = s.value; else h.rooms[s.dataset.key] = s.value || undefined;
+      saveShortlist(); renderShortlist();
+    });
+    el.querySelectorAll("[data-slfs]").forEach(c => c.onchange = () => { shortlist[c.dataset.slfs].fs[c.dataset.key] = c.checked; saveShortlist(); renderShortlist(); });
+    el.querySelectorAll("[data-unlist]").forEach(b => b.onclick = () => { delete shortlist[b.dataset.unlist]; saveShortlist(); renderShortlist(); if (rec) renderListings(inputs()); });
+  }
+
+  // ---------------------------------------------------------------- sun path
   function sunTimes(lat, dec) {
     const r = Math.PI / 180, x = Math.sin(dec * r) / Math.cos(lat * r);
     const az = Math.acos(Math.max(-1, Math.min(1, x))) / r;           // sunrise azimuth from north
@@ -799,67 +899,25 @@
     for (const [d, lab] of [[0, "N"], [90, "E"], [180, "S"], [270, "W"]]) { const [x, y] = pt(d, 122); g += `<text x="${x}" y="${y + 4}" text-anchor="middle" font-size="12" fill="${css("--muted")}">${lab}</text>`; }
     for (const [, dec, rr, col] of seasons) {
       const t = sunTimes(lat, dec), [x1, y1] = pt(t.rise, rr), [x2, y2] = pt(t.set, rr);
-      const through = lat >= dec ? 180 : 0, large = ((t.set - t.rise + 360) % 360) > 180 ? 1 : 0;
-      g += `<path d="M ${x1} ${y1} A ${rr} ${rr} 0 ${large} ${through === 180 ? 1 : 0} ${x2} ${y2}" fill="none" stroke="${css(col)}" stroke-width="3"/>`;
+      const large = ((t.set - t.rise + 360) % 360) > 180 ? 1 : 0;
+      g += `<path d="M ${x1} ${y1} A ${rr} ${rr} 0 ${large} ${lat >= dec ? 1 : 0} ${x2} ${y2}" fill="none" stroke="${css(col)}" stroke-width="3"/>`;
       g += `<circle cx="${x1}" cy="${y1}" r="4" fill="${css(col)}"/><circle cx="${x2}" cy="${y2}" r="4" fill="none" stroke="${css(col)}" stroke-width="2"/>`;
     }
     return `<svg viewBox="0 0 260 260" width="240" height="240" role="img" aria-label="Sun path through the year">${g}</svg>`;
   }
-  function vaastu(si) {
-    const out = [];
-    if (si.facing) out.push(["Entrance / facing", ["N", "E", "NE"].includes(si.facing) ? "good" : si.facing === "SW" ? "poor" : ["S", "SE"].includes(si.facing) ? "mixed" : "ok",
-      ["N", "E", "NE"].includes(si.facing) ? `${DIR_NAMES[si.facing]}-facing is the most favoured in Vaastu.` : si.facing === "SW" ? "South-west-facing is traditionally the least favoured." : `${DIR_NAMES[si.facing]}-facing is acceptable; Vaastu puts more weight on where the door sits along that side.`]);
-    if (si.kitchen) out.push(["Kitchen", si.kitchen === "SE" ? "good" : si.kitchen === "NW" ? "ok" : ["NE", "SW"].includes(si.kitchen) ? "poor" : "mixed", "Vaastu places the kitchen in the south-east (fire corner), with north-west as the alternative; north-east and south-west are avoided."]);
-    if (si.bedroom) out.push(["Main bedroom", si.bedroom === "SW" ? "good" : ["S", "W"].includes(si.bedroom) ? "ok" : si.bedroom === "NE" ? "poor" : "mixed", "The main bedroom is placed in the south-west for stability."]);
-    if (si.prayer) out.push(["Prayer room", si.prayer === "NE" ? "good" : ["N", "E"].includes(si.prayer) ? "ok" : "mixed", "The prayer room belongs in the north-east."]);
-    if (si.shape) out.push(["Plot shape", si.shape === "square" || si.shape === "rect" ? "good" : "poor", "Square or rectangular plots are preferred; cut or irregular corners (especially north-east) are avoided."]);
-    return out;
-  }
-  const FS_ITEMS = {
-    aligned: "Front door lines up straight with a back door or big back window",
-    tjunction: "House sits at the end of a T-junction or a straight road points at it",
-    stairs: "Staircase faces the front door directly",
-    bathdoor: "A bathroom is right next to or facing the front door",
-    garage: "A bedroom sits over the garage",
-    below: "House sits below road level or at the bottom of a slope",
-    irregular: "Irregular, L-shaped or missing-corner floor plan",
-  };
   function renderSun() {
     if (rec.lat == null) { $("#s-sun").innerHTML = ""; return; }
-    const lat = rec.lat, si = sunInputs;
+    const lat = rec.lat;
     const t = [["Summer (Jun 21)", sunTimes(lat, 23.44)], ["Spring / autumn", sunTimes(lat, 0)], ["Winter (Dec 21)", sunTimes(lat, -23.44)]];
-    const opt = (key, extra = "") => `<select data-sun="${key}"><option value="">Not sure</option>${DIRS.map(d => `<option value="${d}" ${si[key] === d ? "selected" : ""}>${DIR_NAMES[d]}</option>`).join("")}${extra}</select>`;
-    const facingLight = si.facing ? FACING_LIGHT[si.facing] : "";
-    const vs = vaastu(si), fsHits = Object.keys(FS_ITEMS).filter(kk => si.fs[kk]);
-    const tag = v => v === "good" ? '<span class="pill">Good</span>' : v === "poor" ? '<span class="pill warn">Avoid</span>' : v === "mixed" ? '<span class="pill warn">Not ideal</span>' : '<span class="pill">OK</span>';
-    $("#s-sun").innerHTML = `<h2>Sun, Vaastu and Feng Shui</h2>
-      <div class="asof">Sun path for latitude ${lat.toFixed(2)} (centre of this zip)</div>
+    $("#s-sun").innerHTML = `<h2>Sun path</h2>
+      <div class="asof">For latitude ${lat.toFixed(2)} (centre of this zip)</div>
       <div class="two">
         <div style="text-align:center">${sunSvg(lat)}<div class="note">Filled dot = sunrise, open dot = sunset. Outer arc summer, inner arc winter.</div></div>
-        <div class="table-wrap"><table><tr><th></th><th>Sunrise</th><th>Sunset</th><th>Noon height</th><th>Daylight</th></tr>
+        <div><div class="table-wrap"><table><tr><th></th><th>Sunrise</th><th>Sunset</th><th>Noon height</th><th>Daylight</th></tr>
           ${t.map(([lab, x]) => `<tr><td>${lab}</td><td>${compass(x.rise)} (${Math.round(x.rise)}&deg;)</td><td>${compass(x.set)} (${Math.round(x.set)}&deg;)</td><td>${Math.round(x.noon)}&deg;</td><td>${x.hours.toFixed(1)} h</td></tr>`).join("")}
         </table></div>
-      </div>
-      <h3>Check a house</h3>
-      <p class="note">Listings don't say which way a house faces. Use the satellite link on a listing to see which way the front door faces, then fill these in.</p>
-      <div class="grid-inputs">
-        <label>House faces (front door side)${opt("facing")}</label>
-        <label>Kitchen is in the${opt("kitchen")}</label>
-        <label>Main bedroom is in the${opt("bedroom")}</label>
-        <label>Prayer room is in the${opt("prayer")}</label>
-        <label>Plot shape<select data-sun="shape"><option value="">Not sure</option>
-          ${[["square", "Square"], ["rect", "Rectangle"], ["irregular", "Irregular / cut corner"]].map(([v, l]) => `<option value="${v}" ${si.shape === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
-      </div>
-      ${facingLight ? `<p class="note"><b>Sunlight:</b> ${facingLight}</p>` : ""}
-      ${vs.length ? `<h3>Vaastu</h3><table>${vs.map(([lab, v, txt]) => `<tr><td>${lab}</td><td style="white-space:normal;text-align:left">${tag(v)} ${txt}</td></tr>`).join("")}</table>` : ""}
-      <h3>Feng Shui</h3>
-      <div class="note">Tick anything that applies to the house:</div>
-      ${Object.entries(FS_ITEMS).map(([kk, lab]) => `<label class="note" style="display:block"><input type="checkbox" data-fs="${kk}" ${si.fs[kk] ? "checked" : ""}> ${lab}</label>`).join("")}
-      <p class="note">${fsHits.length ? `${fsHits.length} traditional Feng Shui concern${fsHits.length > 1 ? "s" : ""}. These are usually softened with layout, plants, screens or mirrors rather than being deal-breakers.` : "No Feng Shui concerns ticked."} Personal Feng Shui directions also depend on your birth year (Kua number), which this page doesn't cover.</p>
-      <p class="note">Vaastu and Feng Shui are traditional systems, so they're kept separate from the price, risk and forecast numbers.</p>`;
-    const save = () => { try { localStorage.setItem("hc-sun", JSON.stringify(sunInputs)); } catch (e) { /* ignore */ } renderSun(); };
-    document.querySelectorAll("[data-sun]").forEach(el => el.onchange = () => { sunInputs[el.dataset.sun] = el.value; save(); });
-    document.querySelectorAll("[data-fs]").forEach(el => el.onchange = () => { sunInputs.fs[el.dataset.fs] = el.checked; save(); });
+        <p class="note">In the northern US the sun sits in the southern sky, so south-facing rooms get the most winter light and west-facing rooms the hottest summer afternoons. Each listing's card says what its facing means for light.</p></div>
+      </div>`;
   }
 
   // ---------------------------------------------------------------- houses checked through RentCast property records
@@ -882,15 +940,28 @@
   }
 
   function renderSchools() {
-    $("#s-schools").innerHTML = `<h2>Schools</h2><p class="note">School ratings aren't built in yet. For now:
-      <a href="https://nces.ed.gov/ccd/schoolsearch/school_list.asp?Search=1&Zip=${zip}&Miles=5" target="_blank" rel="noopener">public schools within 5 miles of ${zip} (NCES)</a>.</p>`;
+    const sc = rec.schools, nces = `https://nces.ed.gov/ccd/schoolsearch/school_list.asp?Search=1&Zip=${zip}&Miles=5`;
+    if (!sc) { $("#s-schools").innerHTML = `<h2>Schools</h2><p class="note">No school data for this zip. <a href="${nces}" target="_blank" rel="noopener">Public schools within 5 miles (NCES)</a>.</p>`; return; }
+    const d = sc.district;
+    const gradeTag = g => !g ? "" : `<span class="${["A", "B"].includes(g) ? "pill" : "pill warn"}">${g}</span>`;
+    $("#s-schools").innerHTML = `<h2>Schools</h2>
+      ${d ? `<p class="verdict">School district: <b>${esc(d.name)}</b> ${gradeTag(d.grade)} <span class="note">test scores higher than ${Math.round(d.pct)}% of US districts${d.year ? ` (${d.year})` : ""}</span></p>` : ""}
+      <div class="table-wrap"><table><tr><th>Nearest public schools</th><th>Level</th><th>Miles</th><th>Students</th><th>Per teacher</th><th>Math</th><th>Reading</th><th>District grade</th></tr>
+        ${sc.list.map(x => `<tr><td>${esc(x.name || "")}${x.charter ? " <span class=\"note\">(charter)</span>" : ""}</td><td>${x.level || ""}</td><td>${x.mi}</td>
+          <td>${x.enroll ?? ""}</td><td>${x.ratio ?? ""}</td><td>${x.math != null ? pct(x.math, 0) : ""}</td><td>${x.read != null ? pct(x.read, 0) : ""}</td><td>${gradeTag(x.dgrade)}</td></tr>`).join("")}
+      </table></div>
+      <p class="note">District grade: A = top 20% of US school districts on Stanford's nationally comparable test scores (SEDA 2025.1), B = next 20%, down to F = bottom 20%. Math and reading are the share of students proficient on their state's test in 2018-19, the last full national release; states use different tests, so compare those only within a state. Attendance zones aren't in this data, so check which schools a specific address is assigned to with the district. More: <a href="${nces}" target="_blank" rel="noopener">NCES school search</a>.</p>`;
   }
+
 
   function renderSources() {
     const a = NAT.asof || {};
-    $("#sources").innerHTML = `Data rebuilt ${NAT.built}. Sources: Freddie Mac mortgage rates (${a.rates || ""}), Zillow home value and rent indexes (${a.zillow_values || ""}),
-      FHFA zip-code house price index (through ${a.fhfa || ""}), US Census ACS 5-year (${a.acs || ""}), County Health Rankings (crime), MIT Election Data and Science Lab,
-      Nolo / NAA / NLIHC for state law, RentCast for listings. Nothing here is financial or legal advice.`;
+    $("#sources").innerHTML = `Data rebuilt ${NAT.built}. Sources: Freddie Mac mortgage rates (${a.rates || ""}), Federal Reserve Bank of New York, Zillow Research (${a.zillow_values || ""}),
+      FHFA house price index (through ${a.fhfa || ""}), US Census Bureau ACS (${a.acs || ""}; this product uses the Census Bureau Data API but is not endorsed or certified by the Census Bureau), BLS, FEMA National Risk Index,
+      ${a.market_source || "Realtor.com"} Economic Research, County Health Rankings &amp; Roadmaps, MIT Election Data and Science Lab, Stanford Education Data Archive, Urban Institute Education Data Portal, NAIC,
+      street data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), listings from Realtor.com.
+      <br>&copy; 2026 Divya Chari. Code licensed under <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/" target="_blank" rel="noopener">PolyForm Noncommercial 1.0.0</a>; see the project's NOTICE for third-party terms.
+      Provided as is, for information only: not financial, legal or real estate advice.`;
   }
 
   // ---------------------------------------------------------------- events

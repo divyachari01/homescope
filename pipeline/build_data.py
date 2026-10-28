@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Divya Chari
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Build the data files the website reads.
 
 It downloads free public datasets, joins them by ZIP code and writes small
@@ -64,6 +66,7 @@ SOURCES = {
     "nri": (["https://hazards.fema.gov/nri/Content/StaticDocuments/DataDownload//NRI_Table_CensusTracts/NRI_Table_CensusTracts.zip",
              "https://hazards.fema.gov/nri/Content/StaticDocuments/DataDownload/NRI_Table_CensusTracts/NRI_Table_CensusTracts.zip"],
             "nri_tracts.zip", False, 90),
+    "seda": ("https://stacks.stanford.edu/file/hm970gr1371/seda_admindist_annual_cs_2025.1.csv", "seda_admindist.csv", False, 90),
     "realtor": ("https://econdata.s3-us-west-2.amazonaws.com/Reports/Core/RDC_Inventory_Core_Metrics_Zip_History.csv",
                 "realtor_zip.csv", False, 7),
     "redfin": ("https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_market_tracker/zip_code_market_tracker.tsv000.gz",
@@ -745,6 +748,30 @@ def main():
     except Exception as e:  # noqa: BLE001
         log(f"  WARNING: Fed rate skipped: {e!r}")
 
+    schools = near = dgrades = None
+    try:
+        if OFFLINE and not (RAW / "schools_dir.json").exists():
+            raise FileNotFoundError("no school directory in raw/")
+        sdir = extras.urban_all(SESSION, f"{extras.URBAN}/schools/ccd/directory/2023/", RAW / "schools_dir.json")
+        sdir["ncessch"] = sdir["ncessch"].astype(str).str.zfill(12)
+        sdir["leaid"] = sdir["leaid"].astype(str).str.zfill(7)
+        try:
+            ef = extras.urban_all(SESSION, f"{extras.URBAN}/schools/edfacts/assessments/2018/grade-99/",
+                                  RAW / "schools_edfacts_2018.json")
+            ef["ncessch"] = ef["ncessch"].astype(str).str.zfill(12)
+            ef = ef.drop_duplicates("ncessch")[["ncessch", "math_test_pct_prof_midpt", "read_test_pct_prof_midpt"]]
+            sdir = sdir.merge(ef, on="ncessch", how="left")
+        except Exception as e:  # noqa: BLE001
+            log(f"  WARNING: school test results skipped: {e!r}")
+        sd = fetch("seda")
+        if sd:
+            dgrades = extras.district_grades(sd)
+            asof["schools"] = f"SEDA 2025.1 ({int(dgrades['year'].iloc[0]) if dgrades['year'].notna().any() else ''})"
+        schools, near = extras.schools_near(points, sdir, list(d.index))
+        log(f"  schools: {len(schools)} in directory")
+    except Exception as e:  # noqa: BLE001
+        log(f"  WARNING: schools skipped: {e!r}")
+
     # ---------- machine-learning forecast (skipped with a warning if anything goes wrong)
     fc, bt = {}, {}
     try:
@@ -840,6 +867,31 @@ def main():
                 rec["market"]["year_ago"] = {k: round(float(p0[k]), 3) for k in sub.columns
                                              if k not in ("zip", "month") and pd.notna(p0[k])}
                 rec["market"]["year_ago"]["label"] = extras.market_label(p0)
+        if near and z in near:
+            rows_ = []
+            for dist_mi, i in near[z]:
+                sc = schools.iloc[i]
+                g = lambda c: sc[c] if c in sc and pd.notna(sc[c]) else None  # noqa: E731
+                lea = g("leaid")
+                dg = dgrades.loc[lea] if dgrades is not None and lea in dgrades.index else None
+                lvl = g("school_level")
+                num_ = lambda v: float(v) if v is not None and float(v) >= 0 else None  # noqa: E731
+                enroll, fte = num_(g("enrollment")), num_(g("teachers_fte"))
+                rows_.append({"name": g("school_name"), "level": extras.LEVELS.get(int(lvl), "Other") if lvl is not None and float(lvl) > 0 else None,
+                              "mi": round(dist_mi, 1), "enroll": int(enroll) if enroll else None,
+                              "ratio": round(enroll / fte, 1) if enroll and fte else None,
+                              "math": num_(g("math_test_pct_prof_midpt")), "read": num_(g("read_test_pct_prof_midpt")),
+                              "charter": bool(g("charter") == 1), "district": g("lea_name"),
+                              "dgrade": str(dg["grade"]) if dg is not None else None})
+            main = None
+            if dgrades is not None:
+                leas = [schools.iloc[i]["leaid"] for _, i in near[z][:4] if schools.iloc[i]["leaid"] in dgrades.index]
+                if leas:
+                    lea = min(set(leas), key=lambda x: (-leas.count(x), leas.index(x)))   # most common, then nearest
+                    dg = dgrades.loc[lea]
+                    main = {"name": schools[schools["leaid"] == lea]["lea_name"].iloc[0], "grade": str(dg["grade"]),
+                            "pct": float(dg["pct"]), "year": int(dg["year"]) if pd.notna(dg["year"]) else None}
+            rec["schools"] = {"district": main, "list": rows_}
         if z in gent:
             rec["gent"] = gent[z]
         fips = rec.get("county_fips")

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Divya Chari
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Estimate which way each listed house faces, from OpenStreetMap streets.
 
 In simple words: a house usually faces the street closest to it. For every listing we find

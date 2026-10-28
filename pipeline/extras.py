@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Divya Chari
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Extra zip-level data: location, surrounding area, natural hazards, buyer/seller market,
 the Fed's interest rate and typical utility bills. Every loader is optional: build_data.py
 skips a block with a warning if its source can't be downloaded or read."""
@@ -248,3 +250,64 @@ def bracket_mean(df, brackets):
     num = sum(df[v] * (lo + hi) / 2 for v, (lo, hi) in brackets.items())
     den = sum(df[v] for v in brackets)
     return num / den.replace(0, np.nan)
+
+
+# ---------------------------------------------------------------- schools
+
+URBAN = "https://educationdata.urban.org/api/v1"
+SEDA_URL = "https://stacks.stanford.edu/file/hm970gr1371/seda_admindist_annual_cs_2025.1.csv"
+LEVELS = {1: "Elementary", 2: "Middle", 3: "High", 4: "Other"}
+
+
+def urban_all(session, url, cache_path):
+    """Download every page of an Urban Institute Education Data API endpoint (cached as JSON)."""
+    if cache_path.exists():
+        return pd.read_json(cache_path)
+    rows = []
+    while url:
+        r = session.get(url, timeout=300)
+        r.raise_for_status()
+        body = r.json()
+        rows += body.get("results", [])
+        url = body.get("next")
+    df = pd.DataFrame(rows)
+    df.to_json(cache_path)
+    return df
+
+
+def district_grades(seda_csv):
+    """Stanford Education Data Archive district scores -> national percentile and A-F grade.
+    Uses the latest year, averaged over grades and subjects (cohort-standardized scale, so
+    districts in different states are comparable)."""
+    df = pd.read_csv(seda_csv, dtype=str)
+    df.columns = [c.strip().lower() for c in df.columns]
+    idc = next(c for c in df.columns if c in ("sedaadmin", "leaid", "sedalea"))
+    val = next(c for c in df.columns if re.fullmatch(r"cs_mn_(avg_)?all", c))
+    namec = next((c for c in df.columns if c.endswith("name")), None)
+    df[val] = pd.to_numeric(df[val], errors="coerce")
+    year = pd.to_numeric(df["year"], errors="coerce") if "year" in df else None
+    if year is not None:
+        last = int(year.max())
+        df = df[year == last]
+    else:
+        last = None
+    g = df.groupby(idc).agg(score=(val, "mean"), name=(namec, "first") if namec else (val, "size"))
+    g = g.dropna(subset=["score"])
+    g["pct"] = (g["score"].rank(pct=True) * 100).round(0)
+    g["grade"] = pd.cut(g["pct"], [-1, 20, 40, 60, 80, 101], labels=["F", "D", "C", "B", "A"]).astype(str)
+    g.index = g.index.astype(str).str.zfill(7)
+    g["year"] = last
+    return g
+
+
+def schools_near(points, schools, zips, k=8, radius_mi=5.0):
+    """Up to k public schools nearest each zip centre (within radius)."""
+    from sklearn.neighbors import BallTree
+    s = schools.dropna(subset=["latitude", "longitude"]).reset_index(drop=True)
+    tree = BallTree(np.radians(s[["latitude", "longitude"]].to_numpy(float)), metric="haversine")
+    pts = points.reindex(zips).dropna()
+    dist, idx = tree.query(np.radians(pts[["lat", "lon"]].to_numpy(float)), k=min(k, len(s)))
+    out = {}
+    for z, d, ii in zip(pts.index, dist * EARTH_RADIUS_MI, idx):
+        out[z] = [(float(dd), int(i)) for dd, i in zip(d, ii) if dd <= radius_mi]
+    return s, out

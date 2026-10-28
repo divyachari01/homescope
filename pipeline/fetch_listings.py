@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Divya Chari
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Pull homes for sale and for rent for the zips in watchlist.txt.
 
 Listings come from Realtor.com through the free open-source HomeHarvest library (no key,
@@ -61,7 +63,7 @@ def from_homeharvest(row):
         "bedrooms": num(g("beds")), "bathrooms": (full or 0) + 0.5 * (half or 0) if full is not None else None,
         "squareFootage": num(g("sqft")), "lotSize": num(g("lot_sqft")), "yearBuilt": num(g("year_built")),
         "daysOnMarket": num(g("days_on_mls")), "latitude": num(g("latitude")), "longitude": num(g("longitude")),
-        "hoa": num(g("hoa_fee")), "url": g("property_url"), "photo": g("primary_photo"),
+        "hoa": num(g("hoa_fee")), "url": g("property_url"),   # no photos or descriptions are kept
     }
     for k in ("bedrooms", "squareFootage", "lotSize", "yearBuilt", "daysOnMarket"):
         if out[k] is not None:
