@@ -38,7 +38,7 @@ ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "raw"
 OUT = ROOT / "site" / "data"
 LISTINGS_SRC = ROOT / "listings"          # written by fetch_listings.py
-STATE_TABLE = Path(__file__).resolve().parent / "states.csv"   # hand-kept: state law + car insurance
+STATE_TABLE = Path(__file__).resolve().parent / "states.csv"   # hand-kept: state law, car + home insurance, closing fees
 
 ZILLOW = "https://files.zillowstatic.com/research/public_csvs"
 
@@ -976,6 +976,8 @@ def main():
     for r in laws.itertuples():
         states[r.state] = {"name": r.name, "car_insurance": int(r.car_insurance) if r.car_insurance else None,
                            "car_quote": int(r.car_quote_monthly) if getattr(r, "car_quote_monthly", "") else None,
+                           "closing_fees": float(r.closing_fees_pct) if r.closing_fees_pct else None,
+                           "home_ins": int(r.home_ins_400k) if r.home_ins_400k else None,
                            "law": {"rent_control": r.rent_control, "just_cause": r.just_cause,
                                    "nonpay_notice_days": r.nonpay_notice_days, "notes": r.notes}}
         if r.state in state_votes:

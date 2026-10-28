@@ -8,10 +8,6 @@ refreshed daily). If that fails for a zip and a RENTCAST_API_KEY is set, RentCas
 a backup, at most weekly and for a few zips so the free plan (50 calls a month) lasts.
 Results are saved in listings/<zip>.json, with each home's facing direction estimated from
 OpenStreetMap streets.
-
-It also looks up the RentCast property record (year built, roof / exterior / foundation type,
-tax assessments, property taxes, last sale) for each address in inspect.txt. Each address is
-looked up once and kept, at most NEW_INSPECTIONS per run.
 """
 import datetime as dt
 import json
@@ -27,12 +23,10 @@ import orient
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "listings"
 WATCHLIST = ROOT / "watchlist.txt"
-INSPECT = ROOT / "inspect.txt"
 RENTCAST = "https://api.rentcast.io/v1/listings"
 MAX_ZIPS = 30            # zips pulled daily from Realtor.com
 RENTCAST_DAYS = 6        # backup source: refresh at most weekly ...
 RENTCAST_ZIPS = 5        # ... and for at most this many zips
-NEW_INSPECTIONS = 3      # new house lookups per run
 
 STYLE = [("SINGLE", "Single Family"), ("CONDO", "Condo"), ("COOP", "Condo"), ("TOWN", "Townhouse"),
          ("MULTI", "Multi-Family"), ("DUPLEX", "Multi-Family"), ("LAND", "Land"), ("FARM", "Land"),
@@ -105,25 +99,6 @@ def add_facing(data):
         print(f"{data['zip']}: could not estimate facing directions: {e}", file=sys.stderr)
 
 
-def inspect_houses(key):
-    """RentCast property records for the addresses in inspect.txt, saved in listings/properties.json."""
-    path = OUT / "properties.json"
-    saved = json.loads(path.read_text()) if path.exists() else {}
-    wanted = [ln.split("#")[0].strip() for ln in INSPECT.read_text().splitlines()] if INSPECT.exists() else []
-    wanted = [a for a in wanted if a]
-    for address in [a for a in wanted if a not in saved][:NEW_INSPECTIONS] if key else []:
-        r = requests.get("https://api.rentcast.io/v1/properties", headers={"X-Api-Key": key, "Accept": "application/json"},
-                         params={"address": address}, timeout=60)
-        if r.status_code != 200:
-            print(f"{address}: RentCast error {r.status_code}: {r.text[:200]}", file=sys.stderr)
-            continue
-        found = r.json()
-        saved[address] = found[0] if found else {"formattedAddress": address, "notFound": True}
-        print(f"{address}: {'found' if found else 'not found'}")
-    saved = {a: v for a, v in saved.items() if a in wanted}      # drop removed addresses
-    path.write_text(json.dumps(saved, separators=(",", ":")))
-
-
 def main():
     key = os.environ.get("RENTCAST_API_KEY", "").strip()
     zips = []
@@ -163,11 +138,10 @@ def main():
         path.write_text(json.dumps(data, separators=(",", ":")))
     # drop zips that were removed from the watchlist
     for p in OUT.glob("*.json"):
-        if p.stem not in zips and p.stem not in ("index", "properties"):
+        if p.stem not in zips and p.stem != "index":
             p.unlink()
-    index = sorted(p.stem for p in OUT.glob("*.json") if p.stem not in ("index", "properties"))
+    index = sorted(p.stem for p in OUT.glob("*.json") if p.stem != "index")
     (OUT / "index.json").write_text(json.dumps(index))
-    inspect_houses(key)
 
 
 if __name__ == "__main__":

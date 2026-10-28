@@ -5,7 +5,7 @@
   const $ = s => document.querySelector(s);
   const DEFAULTS = {
     income: 100000, debts: 300, cash: 60000, save: 1500, rent0: 1500, downPct: 20, years: 30, rate: "",
-    housingShare: 28, dtiCap: 36, taxRate: "", insRate: 0.5, pmiRate: 0.5, maintRate: 1, closingPct: 3,
+    housingShare: 28, dtiCap: 36, taxRate: "", insRate: "", pmiRate: 0.5, maintRate: 1, closingPct: "",
     sellPct: 6, hoa: "", incomeGrowth: 3, invReturn: 5, rateShift: 0, H: 10, invPremium: 0.75, invDown: 25,
     vacancy: 5, mgmt: 8, hackRent: "", strNightly: 150, strOcc: 55, strFees: 25,
   };
@@ -19,7 +19,7 @@
     "Land": "Land",
   };
 
-  let NAT = null, STATES = {}, LISTED = [], INSPECTED = {};
+  let NAT = null, STATES = {}, LISTED = [];
   let rec = null, zip = "", target = { type: "all", custom: null }, listing = null, listFilter = "All", listSort = "fit", onlyAfford = true, vaastuOnly = false;
   const charts = {};
 
@@ -37,6 +37,9 @@
   function loadInputs() {
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem("hc-inputs") || "{}"); } catch (e) { /* storage unavailable */ }
+    // Older versions saved fixed defaults for these; blank them so each zip's own values are used.
+    if (saved.insRate === "0.5") delete saved.insRate;
+    if (saved.closingPct === "3") delete saved.closingPct;
     document.querySelectorAll("[data-k]").forEach(el => {
       const key = el.dataset.k;
       el.value = saved[key] ?? DEFAULTS[key];
@@ -57,6 +60,15 @@
     for (const [key, def] of Object.entries(DEFAULTS)) if (o[key] === null || Number.isNaN(o[key])) o[key] = def === "" ? null : def;
     o.ratePct = o.rate ?? currentRate(o.years);
     o.taxRate = o.taxRate ?? (rec?.acs?.tax_rate || 1.1);
+    // Home insurance and closing costs follow the zip's state unless set by hand.
+    const st = STATES[rec?.state] || {};
+    o.insAuto = o.insRate === null;
+    o.insRate = o.insRate ?? (st.home_ins ? st.home_ins / 400000 * 100 : 0.5);
+    o.closingAuto = o.closingPct === null;
+    o.closingFees = st.closing_fees ?? 1;
+    // Closing = title, recording and transfer taxes (state average) + about 1% lender fees
+    // + first year of home insurance + 3 months of property tax paid into escrow.
+    o.closingPct = o.closingPct ?? (o.closingFees + 1 + o.insRate + o.taxRate / 4);
     o.hoaAuto = o.hoa === null;
     o.hoa = o.hoa ?? autoHoa();
     o.cash0 = o.cash;
@@ -125,7 +137,6 @@
     try {
       [NAT, STATES] = await Promise.all([getJSON("data/national.json"), getJSON("data/states.json")]);
       LISTED = await getJSON("data/listings/index.json").catch(() => []);
-      INSPECTED = await getJSON("data/listings/properties.json").catch(() => ({}));
     } catch (e) {
       $("#status").textContent = "Data files are missing. Run the build (see README) and reload.";
       return;
@@ -217,7 +228,6 @@
     renderSun();
     renderListings(o);
     renderShortlist();
-    renderInspected();
     renderSchools();
   }
 
@@ -241,7 +251,10 @@
     else if (rec.acs?.home_value) out.push(card("Median home value", k(rec.acs.home_value), "Census estimate (Zillow has no value here)"));
     const mp = Calc.maxPrice(o);
     const tp = targetPrice(o);
-    out.push(card("You can afford up to", k(mp.price), `at ${o.ratePct}%. Your income allows ${k(mp.byPayment)}, your cash allows ${k(mp.byCash)} (${o.downPct}% down + closing)`,
+    const where = rec.state || "this state";
+    out.push(card("You can afford up to", k(mp.price), `at ${o.ratePct}%. Your income allows ${k(mp.byPayment)}, your cash allows ${k(mp.byCash)}.
+      Cash covers ${o.downPct}% down + ${pct(o.closingPct)} closing${o.closingAuto ? ` (${where} fees and taxes ${pct(o.closingFees, 2)}, lender 1%, insurance and tax escrow)` : ""}.
+      Monthly includes ${pct(o.taxRate, 2)} property tax${o.insAuto ? ` and ${where} home insurance ${pct(o.insRate, 2)}` : ""}${o.hoa ? ` and ${money(o.hoa)} HOA` : ""}.`,
       tp ? (mp.price >= tp ? `<span class="pill">Covers the ${TYPES.find(t => t[0] === target.type)[1].toLowerCase()}</span>`
                           : `<span class="pill warn">${k(tp - mp.price)} short of the selected home</span>`) : ""));
     const ind = rec.ind || {}, p = rec.pct || {};
@@ -845,7 +858,7 @@
           ${h.top.map(([n, v, lab]) => `<tr><td>${esc(n)}</td><td>${Math.round(v)}</td><td>${lab || ""}</td></tr>`).join("")}</table>
         <p class="note">${flood ? "Flood risk is notable here: regular home insurance doesn't cover floods, so price in flood insurance. " : ""}Check the exact address on <a href="https://msc.fema.gov/portal/search?AddressQuery=${zip}" target="_blank" rel="noopener">FEMA's flood maps</a>.</p>` : ""}
       ${yb ? `<h3>Age of homes here (typical year built: ${yb})</h3><ul class="note">${ageFlags(yb).map(f => `<li>${f}</li>`).join("")}</ul>` : ""}
-      <p class="note">Roof age, structure and what a specific house is built from aren't in any public database. An inspection covers these, and the "Houses you're checking" section below shows what RentCast has on record for addresses you add.</p>`;
+      <p class="note">Roof age, structure and what a specific house is built from aren't in any public database. A home inspection covers these.</p>`;
   }
 
   // ---------------------------------------------------------------- sun path, Vaastu and Feng Shui
@@ -1028,24 +1041,6 @@
   }
 
   // ---------------------------------------------------------------- houses checked through RentCast property records
-  function renderInspected() {
-    const houses = Object.values(INSPECTED || {}).filter(h => (h.zipCode || "") === zip || (h.formattedAddress || "").includes(zip));
-    const how = `To check a specific house, add its full address (e.g. "123 Main St, Columbus, OH 43201") on its own line in <code>inspect.txt</code> on GitHub. Each new address uses one RentCast lookup.`;
-    if (!houses.length) { $("#s-inspect").innerHTML = `<h2>Houses you're checking</h2><p class="note">${how}</p>`; return; }
-    const feat = h => Object.entries(h.features || {}).filter(([, v]) => v !== null && v !== "" && typeof v !== "object").map(([kk, v]) => `${kk.replace(/([A-Z])/g, " $1").toLowerCase()}: ${v === true ? "yes" : v}`).join(" &middot; ");
-    const lastYear = obj => { const ks = Object.keys(obj || {}).sort(); return ks.length ? obj[ks[ks.length - 1]] : null; };
-    $("#s-inspect").innerHTML = `<h2>Houses you're checking</h2><div class="listings">${houses.map(h => {
-      const tax = lastYear(h.propertyTaxes), asmt = lastYear(h.taxAssessments);
-      return `<div class="listing"><div class="price">${esc(h.formattedAddress || "")}</div>
-        <div class="note">${esc(h.propertyType || "")}${h.yearBuilt ? ` &middot; built ${h.yearBuilt}` : ""}${h.squareFootage ? ` &middot; ${h.squareFootage.toLocaleString()} sq ft` : ""}${h.lotSize ? ` &middot; lot ${h.lotSize.toLocaleString()} sq ft` : ""}</div>
-        ${feat(h) ? `<div class="note">${feat(h)}</div>` : ""}
-        ${h.lastSalePrice ? `<div>Last sold ${money(h.lastSalePrice)}${h.lastSaleDate ? ` (${h.lastSaleDate.slice(0, 10)})` : ""}</div>` : ""}
-        ${asmt ? `<div>Tax assessment ${asmt.year || ""}: ${money(asmt.value)}${asmt.land ? ` (land ${money(asmt.land)})` : ""}</div>` : ""}
-        ${tax ? `<div>Property tax ${tax.year || ""}: ${money(tax.total)}</div>` : ""}
-        ${h.yearBuilt ? `<ul class="note">${ageFlags(h.yearBuilt).map(f => `<li>${f}</li>`).join("")}</ul>` : ""}
-      </div>`; }).join("")}</div><p class="note">${how}</p>`;
-  }
-
   function renderSchools() {
     const sc = rec.schools, nces = `https://nces.ed.gov/ccd/schoolsearch/school_list.asp?Search=1&Zip=${zip}&Miles=5`;
     if (!sc) { $("#s-schools").innerHTML = `<h2>Schools</h2><p class="note">No school data for this zip. <a href="${nces}" target="_blank" rel="noopener">Public schools within 5 miles (NCES)</a>.</p>`; return; }

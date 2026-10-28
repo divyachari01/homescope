@@ -28,7 +28,7 @@ Everything runs on GitHub for free. A GitHub Action runs once a day, downloads t
 pipeline/build_data.py      downloads and joins the public data, writes site/data/
 pipeline/forecast.py        the machine-learning forecast and its 2022-2026 test
 pipeline/extras.py          location, surrounding area, hazards, market, Fed rate, utilities
-pipeline/fetch_listings.py  listings for watchlist.txt (Realtor.com) and house lookups for inspect.txt
+pipeline/fetch_listings.py  listings for watchlist.txt (Realtor.com)
 pipeline/orient.py          estimates which way each listed home faces from OpenStreetMap
 api/listings.py             serverless function: live listings for any zip (deployed on Vercel)
 site/config.js              address of that function
@@ -51,7 +51,7 @@ After that it rebuilds itself every day. You can also link straight to a zip wit
 
 ## Listings and house lookups
 
-Homes for sale and for rent in the zips on `watchlist.txt` (up to 30) are pulled every day from Realtor.com through [HomeHarvest](https://github.com/ZacharyHampton/HomeHarvest), a free open-source library that needs no key. It reads Realtor.com's site, which their terms of use don't allow, so it can stop working if they block it; this project is for personal use. If it fails, RentCast is used as a backup (weekly, up to 5 zips) when `RENTCAST_API_KEY` is set. Each address in `inspect.txt` gets one RentCast property-record lookup the first time and is then kept, with at most 3 new addresses per day. Saved listings and lookups are committed back to the repo so they survive the daily rebuild.
+Homes for sale and for rent in the zips on `watchlist.txt` (up to 30) are pulled every day from Realtor.com through [HomeHarvest](https://github.com/ZacharyHampton/HomeHarvest), a free open-source library that needs no key. It reads Realtor.com's site, which their terms of use don't allow, so it can stop working if they block it; this project is for personal use. If it fails, RentCast is used as a backup (weekly, up to 5 zips) when `RENTCAST_API_KEY` is set. Saved listings and lookups are committed back to the repo so they survive the daily rebuild.
 
 Each listed home's facing direction is estimated from OpenStreetMap streets (the direction from the house to its nearest street), which drives the per-house Vaastu and Feng Shui notes.
 
@@ -66,7 +66,6 @@ The site rebuilds daily, but each source publishes on its own schedule, and ever
 | Inflation (CPI) | Bureau of Labor Statistics | monthly |
 | Stock market (S&P 500) | Stooq or the open S&P 500 dataset | monthly |
 | Listings | Realtor.com via HomeHarvest (RentCast as backup) | daily |
-| House records (inspect.txt) | RentCast | on request |
 | Streets, places and noise sources near listings | OpenStreetMap (Overpass) | daily |
 | Address lookup and drive times | OpenStreetMap Nominatim and OSRM, called from your browser | when you set a work address |
 | County jobs and pay | Census County Business Patterns | yearly |
@@ -87,7 +86,7 @@ The site rebuilds daily, but each source publishes on its own schedule, and ever
 - The forecast is a statistical model, not a promise. Its track record on 2022 to 2026 is shown on the page so you can judge it, and it can't see shocks that haven't happened yet.
 - FHFA's long index covers single-family homes bought with standard (Fannie Mae / Freddie Mac) mortgages, and some small zips have gaps.
 - Crime is county-level and car insurance is a state average, because finer free data doesn't exist nationally.
-- Roof age, structural condition and building materials of a specific house aren't in public data. A home inspection covers these; RentCast's property record has some of them for addresses in `inspect.txt`.
+- Roof age, structural condition and building materials of a specific house aren't in public data. A home inspection covers these.
 - Listing sites don't tag styles like villa or bungalow, so homes are grouped by building type and by price tier within the zip.
 - Laws change. The state table was checked in October 2026; confirm local rules (rent control, short-term rental permits) with the city before acting.
 - Vaastu and Feng Shui checks are traditional guidance and are kept separate from the price, risk and forecast numbers.

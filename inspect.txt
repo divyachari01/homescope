@@ -1,3 +1,0 @@
-# Full addresses of houses to look up in RentCast property records, one per line, e.g.
-# 123 Main St, Columbus, OH 43201
-# Each new address uses one RentCast call (free plan: 50 a month shared with listings).
