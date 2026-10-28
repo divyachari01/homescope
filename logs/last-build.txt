@@ -10,4 +10,33 @@ Zillow
   downloaded zori
   downloaded zhvf
 FHFA
-ERROR: required source fhfa unavailable: 404 Client Error: Not Found for url: https://www.fhfa.gov/hpi/download/annually/hpi_at_bdl_zip5.xlsx
+  downloaded fhfa
+Census
+  downloaded zip_county
+Traceback (most recent call last):
+  File "/home/runner/work/homescope/homescope/pipeline/build_data.py", line 709, in <module>
+    main()
+  File "/home/runner/work/homescope/homescope/pipeline/build_data.py", line 506, in main
+    zip_county = load_zip_county(fetch("zip_county"))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/homescope/homescope/pipeline/build_data.py", line 238, in load_zip_county
+    rel = pd.read_csv(path, sep="|", dtype=str)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/io/parsers/readers.py", line 1866, in read_csv
+    return _read(filepath_or_buffer, kwds)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/io/parsers/readers.py", line 423, in _read
+    parser = TextFileReader(filepath_or_buffer, **kwds)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/io/parsers/readers.py", line 2721, in __init__
+    self._engine = self._make_engine(f, self.engine)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/io/parsers/readers.py", line 3006, in _make_engine
+    return mapping[engine](f, **self.options)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/io/parsers/c_parser_wrapper.py", line 107, in __init__
+    self._reader = parsers.TextReader(src, **kwds)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "pandas/_libs/parsers.pyx", line 724, in pandas._libs.parsers.TextReader.__cinit__
+  File "pandas/_libs/parsers.pyx", line 909, in pandas._libs.parsers.TextReader._get_header
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0x8b in position 1: invalid start byte
