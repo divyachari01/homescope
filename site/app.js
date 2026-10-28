@@ -750,6 +750,65 @@
   const crimeLevel = v => { if (!Number.isFinite(v)) return null; const t = crimeName() === "Homicides" ? [3, 7, 12] : [200, 400, 700];
     return v < t[0] ? "low" : v < t[1] ? "moderate" : v < t[2] ? "high" : "very high"; };
   const facingRatingText = f => ["N", "E", "NE"].includes(f) ? "favoured in Vaastu" : f === "SW" ? "least favoured" : ["S", "SE"].includes(f) ? "not ideal" : "acceptable";
+
+  // ---------------------------------------------------------------- "Our take": a written read on one house
+  // Built from every signal the page has (value, market, forecast, budget, schools, crime, hazards,
+  // growth, condition, Vaastu, purpose). Plain rules, no paid AI: each sentence says what the data says.
+  function ourTake(s, d, o) {
+    const out = [], mode = $("#purpose").value, kind = (LISTING_GROUPS[s.propertyType] || "home").toLowerCase().replace("2-4 unit building", "2-4 unit building");
+    const size = [s.bedrooms != null ? `${s.bedrooms}-bed` : "", kind].filter(Boolean).join(" ");
+    const m = rec.market || {}, fc = rec.fc?.["1"], fc5 = rec.fc?.["5"], sd = rec.schools?.district, g = rec.growth, hz = rec.hazard;
+    // 1. the price
+    const priceBit = !Number.isFinite(d.gap) ? `There isn't enough data to put a value on this ${size}.`
+      : d.gap <= -5 ? `This ${size} is listed ${Math.abs(d.gap).toFixed(0)}% below what similar homes are worth (${k(d.F)}), which is a good start.`
+      : d.gap <= 8 ? `This ${size} is priced about right: asking is within a few percent of its value (${k(d.F)}).`
+      : `This ${size} is listed ${d.gap.toFixed(0)}% above what similar homes are worth (${k(d.F)}), so there's room to push the price down.`;
+    const mkBit = m.label ? ` It's a ${m.label.toLowerCase()}${m.dom ? ` where homes take about ${Math.round(m.dom)} days to sell` : ""}${d.stale ? `, and this one has sat for ${s.daysOnMarket} days` : ""}.` : "";
+    out.push(priceBit + mkBit);
+    // 2. what it means for you
+    const oo = { ...o, hoa: s.hoa || o.hoa || 0 }, mo = Calc.monthly(d.offer, oo), cash = d.offer * (o.downPct + o.closingPct) / 100;
+    const share = mo.total / (o.income / 12) * 100;
+    out.push(d.overBudget
+      ? `At around ${k(d.offer)} it's over your budget of ${k(d.maxPrice)}: you'd need more saved or a cheaper home.`
+      : `At around ${k(d.offer)} you'd pay about ${money(mo.total)} a month (${share.toFixed(0)}% of your income) and need about ${k(cash)} up front, leaving ${k(Math.max(0, o.cash - cash))} of your savings as a cushion.`);
+    if (mode === "rent" || mode === "str") {
+      const rents = (listing?.rent || []).filter(r => r.price && r.bedrooms === s.bedrooms).map(r => r.price);
+      const rent = rents.length >= 3 ? median(rents) : typicalRent();
+      if (rent) {
+        const r = Calc.rental(d.offer, rent, { ...investorOpts(oo), mgmt: o.mgmt });
+        out.push(`As a rental it would bring about ${money(rent)} a month${rents.length >= 3 ? ` (similar ${s.bedrooms}-bed rentals nearby)` : ""}, for ${r.cashFlow >= 0 ? `${money(r.cashFlow)} a month of profit` : `a loss of ${money(-r.cashFlow)} a month`} after the loan and costs (cap rate ${pct(r.capRate, 1)}).`);
+      }
+    } else if (o.rent0) {
+      out.push(mo.total > o.rent0 ? `That's ${money(mo.total - o.rent0)} a month more than your rent now, though part of each payment builds equity.` : `That's ${money(o.rent0 - mo.total)} a month less than your rent now.`);
+    }
+    // 3. where prices and the area are heading
+    const fut = [];
+    if (fc) fut.push(`prices here are expected to ${fc[1] >= 0 ? "rise" : "fall"} about ${Math.abs(fc[1]).toFixed(1)}% next year (range ${signed(fc[0])} to ${signed(fc[2])})${fc5 ? ` and ${signed(fc5[1])} over 5 years` : ""}`);
+    if (g?.rate != null) fut.push(g.rate < -0.3 ? `the population is shrinking (${signed(g.rate)} a year), which can soften demand` : g.pct >= 80 ? `the population is growing fast (${signed(g.rate)} a year), which supports demand` : `the population is ${g.rate > 0.3 ? "growing" : "steady"} (${signed(g.rate)} a year)`);
+    if (rec.jobs?.jobs_change != null) fut.push(`county jobs are ${rec.jobs.jobs_change >= 0 ? "up" : "down"} ${Math.abs(rec.jobs.jobs_change).toFixed(0)}% over 5 years`);
+    if (fut.length) out.push(fut.join("; ").replace(/^./, c => c.toUpperCase()) + ".");
+    // 4. living there
+    const area = [];
+    if (sd?.n10) area.push(`schools score ${sd.n10}/10 nationally${sd.g10 ? ` with ${sd.g10 >= 6 ? "good" : "weak"} student progress (${sd.g10}/10)` : ""}`);
+    if (rec.ind?.crime != null) area.push(`county crime is ${crimeLevel(rec.ind.crime)}`);
+    const risks = (hz?.top || []).filter(([, , lab]) => /very high|relatively high/i.test(lab || "")).slice(0, 2).map(([n]) => n.toLowerCase());
+    if (risks.length) area.push(`the main natural risks are ${risks.join(" and ")}${risks.some(r => /flood/.test(r)) ? " (get a flood insurance quote)" : ""}`);
+    if (area.length) out.push(area.join(", ").replace(/^./, c => c.toUpperCase()) + ".");
+    // 5. the house itself
+    const house = [];
+    if (s.yearBuilt) { const age = new Date().getFullYear() - s.yearBuilt; house.push(age > 40 ? `it's ${age} years old, so budget for older systems (roof, wiring, pipes)` : age < 5 ? "it's nearly new" : `it was built in ${s.yearBuilt}`); }
+    if (d.good.length) house.push(`the listing mentions ${d.good.slice(0, 2).join(" and ")}`);
+    if (d.bad.length) house.push(`it also mentions ${d.bad.slice(0, 2).join(" and ")}, which needs a closer look`);
+    if (d.flip) house.push("it looks recently flipped, so check the quality of the work");
+    const f = s.orient?.facing;
+    if (f) house.push(`it faces ${DIR_NAMES[f].toLowerCase()} (${facingRatingText(f)} in Vaastu)`);
+    if (house.length) out.push(house.join("; ").replace(/^./, c => c.toUpperCase()) + ".");
+    // 6. bottom line
+    const yes = !d.overBudget && Number.isFinite(d.gap) && d.gap <= 8 && !d.bad.some(b => /foundation|water|mold|fire/.test(b));
+    out.push(`Bottom line: ${d.overBudget ? "not one for your current budget." : yes ? `worth pursuing. Open around ${k(Math.min(d.opening, d.walk))} and don't go above ${k(d.walk)}.` : `be careful. If you go for it, open around ${k(Math.min(d.opening, d.walk))} and walk away above ${k(d.walk)}.`}`);
+    return out;
+  }
+
   // ---------------------------------------------------------------- deal check for one house
   let deal = null;                               // { id, zip, base: listing row, full: property record, state }
   const fullCache = new Map();
@@ -849,6 +908,7 @@
       ${(() => { const f = s.orient?.facing || shortlist[deal.id]?.facing, v = vaastuScore({ ...(shortlist[deal.id] || {}), facing: f, tjunction: s.orient ? !!s.orient.tjunction : undefined });
         return f ? `<p class="vaastu-line"><b>Vaastu ${v ? v.pct + "%" : ""}</b> &middot; faces ${DIR_NAMES[f].toLowerCase()} (${facingRatingText(f)})${s.orient?.tjunction ? " &middot; a street points straight at it" : ""}${s.orient?.corner ? " &middot; corner lot" : ""}. ${shortlist[deal.id] ? "" : "Save it to add the rooms for a full score."}</p>`
           : `<p class="vaastu-line muted">Facing not known yet, so no Vaastu score. Check the satellite view.</p>`; })()}
+      <div class="take"><h3>Our take</h3>${ourTake(s, d, o).map(t => `<p>${t}</p>`).join("")}</div>
       <h3>What to do</h3><ul class="tight">${tips.map(t => `<li>${t}</li>`).join("")}</ul>
 
       <details class="sub"><summary>How this was worked out</summary>
