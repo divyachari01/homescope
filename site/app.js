@@ -284,7 +284,10 @@
     return `<div class="card"><div class="k">${label}</div><div class="v">${value}</div>
       <div class="s">${sub || ""}</div>${pill ? `<div style="margin-top:6px">${pill}</div>` : ""}</div>`;
   }
-  const pctSub = (p, text) => Number.isFinite(p) ? `${text} ${ord(Math.round(p))} of US zips` : "";
+  const pctSub = (p, text) => Number.isFinite(p) ? `${text} ${Math.round(p)}% of US zips` : "";
+  // School and district names come in capitals ("SEGUIN ISD"); show them in normal case, keeping short codes.
+  const nice = t => !t || t !== t.toUpperCase() ? (t || "") : t.toLowerCase().replace(/\b([a-z])([a-z']*)/g, (w, a, b) => a.toUpperCase() + b)
+    .replace(/\b(Isd|Cisd|Usd|Csd|Sd|Esd|Hs|Ms|Es|Ii|Iii|Iv)\b/g, w => w.toUpperCase()).replace(/\bOf\b/g, "of").replace(/\bAnd\b/g, "and");
 
   function renderSummary(o) {
     const out = [], more = [];
@@ -307,7 +310,7 @@
     if (fc1) out.push(card("Price outlook, next year", signed(fc1[1]), `likely; range ${signed(fc1[0])} to ${signed(fc1[2])} (model forecast)`));
     if (rec.hazard?.label) out.push(card("Natural hazard risk", rec.hazard.label, (rec.hazard.top || []).slice(0, 2).map(([n]) => esc(n)).join(", ")));
     const sd = rec.schools?.district;
-    if (sd) out.push(card("School district", sd.n10 ? `${sd.n10}/10` : `Grade ${sd.grade}`, `${esc(sd.name)}${sd.s10 ? `: test scores ${sd.n10}/10 US, ${sd.s10}/10 ${esc(rec.state)}` : ""}${sd.g10 ? `; progress ${sd.g10}/10 US, ${sd.gs10}/10 ${esc(rec.state)}` : ""}`));
+    if (sd) out.push(card("School district", sd.n10 ? `${sd.n10}/10` : `Grade ${sd.grade}`, `${esc(nice(sd.name))}${sd.s10 ? `: test scores ${sd.n10}/10 US, ${sd.s10}/10 ${esc(rec.state)}` : ""}${sd.g10 ? `; progress ${sd.g10}/10 US, ${sd.gs10}/10 ${esc(rec.state)}` : ""}`));
     const gr = rec.growth;
     if (gr?.rate != null) out.push(card("Population growth", `${signed(gr.rate)}/yr`, `${gr.pct != null ? `faster than ${gr.pct}% of US zips` : ""}${gr.pk != null ? ` &middot; county permits ${gr.pk} new homes per 1,000 people a year` : ""}`));
     const rent = typicalRent(), rs = rentSource();
@@ -438,7 +441,7 @@
         <div>
           <h3>If rates move</h3>
           <div class="table-wrap"><table><tr><th>Rate</th><th>Max you can buy</th><th>Payment on selected home</th></tr>${rows}</table></div>
-          <p class="note">Each 1-point rise in rates cuts your buying power by about ${k(perPoint)} (when income is the limit).</p>
+          <p class="note">${Calc.maxPrice(o).limitedBy === "cash" ? "Your cash sets your limit right now, so rate changes only change the monthly payment." : `Each 1-point rise in rates cuts your buying power by about ${k(perPoint)}.`}</p>
           <h3>Down payment options</h3>
           ${downTable(tp, o)}
         </div>
@@ -506,9 +509,11 @@
     if (!best) verdict = `Under the likely scenario the selected home doesn't fit your cash and income in the next 5 years. Try a cheaper type, a bigger down payment fund or a longer horizon.`;
     else {
       const gap = best.mid.netWorth - rentOnly.mid.netWorth;
-      verdict = `Best timing for the selected home: <b>${best.k === 0 ? "now" : "in " + best.k + " year" + (best.k > 1 ? "s" : "") + " (" + (yr + best.k) + ")"}</b>. ` +
-        `After ${o.H} years that leaves you about ${k(Math.abs(gap))} ${gap >= 0 ? "ahead of" : "behind"} renting the whole time (likely scenario). ` +
-        (best.low.netWorth < rentOnly.low.netWorth ? `In the low scenario, renting would come out ahead.` : `It still beats renting in the low scenario.`);
+      const when = best.k === 0 ? "now" : `in ${best.k} year${best.k > 1 ? "s" : ""} (${yr + best.k})`;
+      verdict = gap >= 0
+        ? `Best time to buy the selected home: <b>${when}</b>. After ${o.H} years that leaves you about ${k(gap)} ahead of renting (likely case). ` +
+          (best.low.netWorth < rentOnly.low.netWorth ? "If prices do badly, renting would come out ahead." : "It still beats renting if prices do badly.")
+        : `<b>Renting comes out ahead</b> here over ${o.H} years, by about ${k(-gap)} in the likely case. If you do buy, ${when} is the best time.`;
     }
     hint("h-future", [fc ? `likely ${signed(fc["1"][1])} next year, ${signed(fc["5"][1])} in 5 years` : "", best ? `best time to buy: ${best.k === 0 ? "now" : yr + best.k}` : ""].filter(Boolean).join("; "));
     const rows = buyRows.map(r => `<tr${best && r.k === best.k ? ' class="best"' : ""}>
@@ -594,7 +599,7 @@
         ${STATES[rec.state]?.car_quote ? `<tr><td>Car insurance, typical full-coverage quote in the state (Sep 2026)</td><td>${money(STATES[rec.state].car_quote)}</td></tr>` : car ? `<tr><td>Car insurance, state average per car (2024)</td><td>${money(car / 12)}</td></tr>` : ""}
         ${rent ? `<tr><td>Typical rent in this zip</td><td>${money(rent)}</td></tr>
         <tr><td>Owning costs ${own > rent ? "more" : "less"} than renting by</td><td>${money(Math.abs(own - rent))}/mo</td></tr>` : ""}</table>
-        <p class="note">Part of each mortgage payment is savings (principal), which renting doesn't give you. The best-time table above weighs both sides.</p>`;
+        <p class="note">Part of each mortgage payment is savings (principal), which renting doesn't give you. The best-time table on the Prices tab weighs both sides.</p>`;
     } else if (mode === "rent" || mode === "str") {
       const io = investorOpts(o);
       let monthlyRent = rent, label = "Typical long-term rent";
@@ -1036,7 +1041,7 @@
         ${dbl && dbl < 100 ? `<tr><td>Population doubles in</td><td>about ${Math.round(dbl)} years</td></tr>` : ""}
         ${g.urate != null ? `<tr><td>Homes (housing units) growth per year</td><td>${signed(g.urate)}</td></tr>` : ""}
         ${g.pk != null ? `<tr><td>New homes permitted per 1,000 people a year (county, last 3 years)</td><td>${g.pk}${g.pkpct != null ? ` <span class="note">(more than ${g.pkpct}% of counties)</span>` : ""}</td></tr>` : ""}
-        ${r != null ? `<tr><td>If the trend continues: population in 5 / 10 years</td><td>${Math.round(proj(5)).toLocaleString()} / ${Math.round(proj(10)).toLocaleString()}</td></tr>` : ""}
+        ${r != null ? `<tr><td>If the trend continues: population in 5 / 10 years</td><td>about ${(Math.round(proj(5) / 100) * 100).toLocaleString()} / ${(Math.round(proj(10) / 100) * 100).toLocaleString()}</td></tr>` : ""}
       </table>
       ${g.permits ? `<h3>New homes permitted each year (county)</h3><div class="chart"><canvas id="cPermits"></canvas></div>` : ""}
       <p class="note">Fast growth usually means rising demand and more building nearby (traffic, construction, new shops). Homes growing faster than people can mean more supply and softer prices.</p>`;
@@ -1268,13 +1273,13 @@
     if (!sc) { $("#s-schools").innerHTML = `<h2>Schools</h2><p class="note">No school data for this zip. <a href="${nces}" target="_blank" rel="noopener">Public schools within 5 miles (NCES)</a>.</p>`; return; }
     const d = sc.district;
     const gradeTag = g => !g ? "" : `<span class="${g >= 6 ? "pill" : "pill warn"}">${g}/10</span>`;
-    hint("h-schools", d ? `${esc(d.name)}: scores ${d.n10 ?? "?"}/10 US, ${d.s10 ?? "?"}/10 ${esc(rec.state)}${d.g10 ? `; progress ${d.g10}/10 US, ${d.gs10}/10 ${esc(rec.state)}` : ""}` : "");
+    hint("h-schools", d ? `${esc(nice(d.name))}: scores ${d.n10 ?? "?"}/10 US, ${d.s10 ?? "?"}/10 ${esc(rec.state)}${d.g10 ? `; progress ${d.g10}/10 US, ${d.gs10}/10 ${esc(rec.state)}` : ""}` : "");
     $("#s-schools").innerHTML = `<h2>Schools</h2>
-      ${d ? `<p class="verdict">School district: <b>${esc(d.name)}</b> ${gradeTag(d.n10)} nationally${d.s10 ? `, ${gradeTag(d.s10)} within ${esc(rec.state)}` : ""}
+      ${d ? `<p class="verdict">School district: <b>${esc(nice(d.name))}</b> ${gradeTag(d.n10)} nationally${d.s10 ? `, ${gradeTag(d.s10)} within ${esc(rec.state)}` : ""}
         <span class="note">test scores higher than ${Math.round(d.pct)}% of US districts${d.spct != null ? ` and ${Math.round(d.spct)}% of ${esc(rec.state)} districts` : ""}${d.year ? ` (${d.year})` : ""}</span></p>
       ${d.g10 ? `<p class="verdict">Student progress: ${gradeTag(d.g10)} nationally, ${gradeTag(d.gs10)} within ${esc(rec.state)} <span class="note">how much students gain from grade to grade compared with the national average</span></p>` : ""}` : ""}
       <div class="table-wrap"><table><tr><th>Nearest public schools</th><th>Level</th><th>Miles</th><th>Students</th><th>Per teacher</th><th>Math</th><th>Reading</th><th>District score</th></tr>
-        ${sc.list.map(x => `<tr><td>${esc(x.name || "")}${x.charter ? " <span class=\"note\">(charter)</span>" : ""}</td><td>${x.level || ""}</td><td>${x.mi}</td>
+        ${sc.list.map(x => `<tr><td>${esc(nice(x.name))}${x.charter ? " <span class=\"note\">(charter)</span>" : ""}</td><td>${x.level || ""}</td><td>${x.mi}</td>
           <td>${x.enroll ?? ""}</td><td>${x.ratio ?? ""}</td><td>${x.math != null ? pct(x.math, 0) : ""}</td><td>${x.read != null ? pct(x.read, 0) : ""}</td><td>${gradeTag(x.d10)}</td></tr>`).join("")}
       </table></div>
       <p class="note">Scores rank average test results (Stanford SEDA 2025.1): 10/10 = top 10%. Progress ranks how scores rise from grade 3 to 8. GreatSchools mixes these and more, so its ratings can differ. Math and reading: share proficient on the state test (2018-19). Check which school an address is zoned for with the district. More: <a href="${nces}" target="_blank" rel="noopener">NCES school search</a>.</p>`;
