@@ -894,6 +894,9 @@ def main():
             sdir = extras.urban_all(SESSION, f"{extras.URBAN}/schools/ccd/directory/2023/", RAW / "schools_dir.json")
         sdir["ncessch"] = sdir["ncessch"].astype(str).str.zfill(12)
         sdir["leaid"] = sdir["leaid"].astype(str).str.zfill(7)
+        # SEDA reports New York City's 32 geographic districts as one district (NYC Department of Education)
+        nyc = sdir["lea_name"].astype(str).str.upper().str.contains("NEW YORK CITY GEOGRAPHIC DISTRICT")
+        sdir.loc[nyc, "leaid"] = "3620580"
         try:
             ef = extras.urban_all(SESSION, f"{extras.URBAN}/schools/edfacts/assessments/2018/grade-99/",
                                   RAW / "schools_edfacts_2018.json")
