@@ -782,14 +782,16 @@
     document.body.classList.toggle("noscroll", !$("#dealModal").hidden);
     if (!deal || deal.zip !== zip) { el.innerHTML = ""; return; }
     const loadingFull = API && !fullCache.has(deal.id);
-    const s = { ...deal.base, ...(fullCache.get(deal.id) || {}) };
+    const full = fullCache.get(deal.id) || {};
+    // the listing's own days-on-market and list date win (the record's date can be from an older listing)
+    const s = { ...deal.base, ...full, daysOnMarket: deal.base.daysOnMarket ?? full.daysOnMarket, listDate: deal.base.listDate ?? full.listDate };
     if (!s.price) { el.innerHTML = `<h2>${esc(s.formattedAddress || "")}</h2><p class="note">This house isn't listed for sale right now, so there's no asking price to check. ${s.lastSoldPrice ? `It last sold for ${money(s.lastSoldPrice)} on ${s.lastSoldDate}.` : ""}</p><button type="button" class="link" id="dealClose">Close</button>`; $("#dealClose").onclick = () => { deal = null; renderDeal(o); }; return; }
     const oo = { ...o, hoa: s.hoa || o.hoa };
     const hist = priceHistory();
     const d = Deal.analyze(s, { sold: listing?.zip === zip ? listing.sold || [] : [], active: listing?.zip === zip ? listing.sale : null,
       monthly: rec.zhvi_recent, yearly: hist, rec, o: oo, maxPrice: Calc.maxPrice(oo).price, rate15: NAT.rate15_latest?.value });
     const bt = d.backtest, gapTxt = Number.isFinite(d.gap) ? (Math.abs(d.gap) < 3 ? "in line with" : `${Math.abs(d.gap).toFixed(0)}% ${d.gap > 0 ? "above" : "below"}`) : null;
-    const verdict = !Number.isFinite(d.F) ? "No value estimate available." : d.gap > 8 ? "Priced high." : d.gap < -8 ? "Priced low: a bargain or a hidden problem." : "Priced about right.";
+    const verdict = !Number.isFinite(d.F) ? "No value estimate available." : d.gap > 8 ? "Priced high." : d.gap <= -15 ? "Good price, maybe too good: check for hidden problems." : d.gap <= -5 ? "Good price." : "Fair price.";
     const yrs = s.lastSoldDate ? (Date.now() - new Date(s.lastSoldDate)) / 3.156e10 : null;
     const ins = d.offer * oo.insRate / 100, hz = rec.hazard, flood = (hz?.top || []).some(([n, , lab]) => /flood/i.test(n) && /high/i.test(lab || ""));
 
@@ -1402,6 +1404,7 @@
         ${factorChips(LFACT, lOn, "fFact")}
         ${work ? "" : `<p class="note">Add your work address under "Your budget" to rank by commute.</p>`}
       </details>
+      <p class="note legend"><span style="color:#1f9d6b">&#9679;</span> good price <span style="color:#2f6fb5">&#9679;</span> fair <span style="color:#c4622d">&#9679;</span> priced high <span style="color:#9a9a9a">&#9679;</span> over budget or no estimate</p>
       <p class="verdict">${loading ? `<span class="note">Loading homes for ${loading} zip code${loading > 1 ? "s" : ""} (5-30 s the first time)... </span>` : ""}
         ${noneInBudget ? `Nothing within your budget of ${k(budget)} here. Cheapest homes shown.` : `<b>${shown.length}</b> home${shown.length === 1 ? "" : "s"}${shown.length ? ", best matches first" : ". Try fewer filters or a higher price"}.`}</p>`;
     const on = (id, f) => { const x = $("#" + id); if (x) x.onchange = e => { f(e.target); F.shown = 24; renderHomes(); }; };
@@ -1416,7 +1419,7 @@
       return `<article class="home" data-id="${id}">
         ${s.photo ? `<div class="photo">${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">` : ""}<img src="${esc(s.photo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('.photo').remove()">${s.url ? "</a>" : ""}<span>Photo: Realtor.com</span></div>` : ""}
         <div class="body">
-          <div class="top"><span class="price">${money(s.price)}</span><span class="${VCLS[j.verdict[0]]}">${j.verdict[1]}</span></div>
+          <div class="headrow"><span class="price">${money(s.price)}</span><span class="${VCLS[j.verdict[0]]}">${j.verdict[1]}</span></div>
           <div>${s.bedrooms ?? "?"} bd &middot; ${s.bathrooms ?? "?"} ba${s.squareFootage ? ` &middot; ${s.squareFootage.toLocaleString()} sq ft` : ""} &middot; ${esc(typeOf(s))}</div>
           <div class="note">${esc((s.formattedAddress || "").replace(/, [A-Z]{2},? \d{5}$/, ""))}</div>
           ${j.d && h.fits ? `<div class="offer">Offer around <b>${k(Math.min(j.d.opening, j.d.walk))}</b> &middot; ${money(h.pay)}/mo</div>` : `<div class="note">${money(h.pay)}/mo</div>`}
