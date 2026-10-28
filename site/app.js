@@ -99,6 +99,10 @@
       if (!r.ok) throw new Error(j.error || r.status);
       liveCache.set(z, j); liveState.delete(z);
       if (z === zip) { listing = j; renderListings(inputs()); }
+      // then add facing, walkable places and noise from the street map, right here in the browser
+      j.mapState = "loading";
+      try { await Orient.addTo(j.sale); j.mapState = "done"; } catch (e) { j.mapState = "failed"; }
+      if (z === zip) renderListings(inputs());
     } catch (e) {
       liveState.set(z, "failed");
       if (z === zip) renderListings(inputs());
@@ -728,7 +732,7 @@
     const tag = v => v === "good" ? "pill" : v === "ok" ? "pill" : "pill warn";
     el.innerHTML = `
       <h2>Homes for sale you can buy in ${zip}</h2>
-      <div class="asof">${listing.source || "RentCast"}, fetched ${listing.fetched}: ${sale.length} for sale, ${rentals.length} for rent. Facing directions estimated for ${nOriented} homes from OpenStreetMap streets.</div>
+      <div class="asof">${listing.source || "RentCast"}, fetched ${listing.fetched}: ${sale.length} for sale, ${rentals.length} for rent. ${listing.mapState === "loading" ? "Reading the street map for facing, walkability and noise..." : listing.mapState === "failed" ? "The street-map service didn't respond, so facing, walkability and noise are missing for now." : `Facing directions estimated for ${nOriented} homes from OpenStreetMap streets.`}</div>
       <p class="verdict"><b>${nFit}</b> of ${all.length} homes fit ${investor ? `your cash at ${o.invDown}% down` : "your income, savings and down payment"}.</p>
       <div class="row">
         <label class="note"><input type="checkbox" id="onlyAfford" ${onlyAfford ? "checked" : ""}> Only homes I can afford</label>

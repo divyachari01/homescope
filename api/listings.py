@@ -3,35 +3,30 @@
 """Live listings for any zip, as a Vercel serverless function.
 
 GET /api/listings?zip=43201 returns the same JSON shape as listings/<zip>.json: homes for
-sale and for rent from Realtor.com (via HomeHarvest), with each home's estimated facing
-direction, walkable places and noise sources from OpenStreetMap. Vercel's cache keeps each
+sale and for rent from Realtor.com (via HomeHarvest). The page adds each home's facing
+direction, walkable places and noise from OpenStreetMap itself. Vercel's cache keeps each
 zip's answer for 6 hours, so repeat visits are instant.
 """
 import datetime as dt
 import json
 import sys
-import time
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline"))
 import fetch_listings  # noqa: E402
-import orient  # noqa: E402
 
 
 def build(zipcode):
-    data = {"zip": zipcode, "fetched": dt.date.today().isoformat(), "source": "Realtor.com",
-            "sale": fetch_listings.homeharvest(zipcode, "for_sale"),
-            "rent": fetch_listings.homeharvest(zipcode, "for_rent")}
-    start = time.time()
-    try:   # the street-map step is a bonus: skip it if the map server is slow
-        orient.OVERPASS_TIMEOUT = 25
-        orient.add_orientation(data["sale"])
-    except Exception:  # noqa: BLE001
-        pass
-    data["map_seconds"] = round(time.time() - start, 1)
-    return data
+    # Sale and rental searches run at the same time. The street-map step (facing, walkable
+    # places, noise) runs in the visitor's browser instead, which is faster than from here.
+    with ThreadPoolExecutor(2) as pool:
+        sale = pool.submit(fetch_listings.homeharvest, zipcode, "for_sale")
+        rent = pool.submit(fetch_listings.homeharvest, zipcode, "for_rent")
+        return {"zip": zipcode, "fetched": dt.date.today().isoformat(), "source": "Realtor.com",
+                "sale": sale.result(), "rent": rent.result()}
 
 
 class handler(BaseHTTPRequestHandler):  # noqa: N801  (name required by Vercel)
