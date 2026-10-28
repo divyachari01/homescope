@@ -158,8 +158,9 @@
       rec = shard[zip];
     } catch (e) { rec = null; }
     if (!rec) { $("#results").hidden = true; $("#status").textContent = `No data for ${zip}. It may be a PO box or business-only zip.`; return; }
-    listing = LISTED.includes(zip) ? await getJSON(`data/listings/${zip}.json`).catch(() => null) : liveCache.get(zip) || null;
-    if (!listing && API) loadLive(zip);
+    // Live listings when available (they include recent sales); the daily copy shows meanwhile.
+    listing = liveCache.get(zip) || (LISTED.includes(zip) ? await getJSON(`data/listings/${zip}.json`).catch(() => null) : null);
+    if (!liveCache.has(zip) && API) loadLive(zip);
     try { localStorage.setItem("hc-zip", zip); } catch (e) { /* ignore */ }
     history.replaceState(null, "", `?zip=${zip}`);
     if (deal && deal.zip !== zip) deal = null;
