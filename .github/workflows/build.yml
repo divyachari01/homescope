@@ -37,7 +37,9 @@ jobs:
           restore-keys: raw-
 
       - name: Fetch listings (RentCast)
-        run: python pipeline/fetch_listings.py
+        run: |
+          mkdir -p logs
+          python pipeline/fetch_listings.py 2>&1 | tee logs/listings.txt
         env:
           RENTCAST_API_KEY: ${{ secrets.RENTCAST_API_KEY }}
 
@@ -46,7 +48,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [ -d listings ]; then
-            git add listings
+            git add listings logs/listings.txt
             git diff --cached --quiet || (git commit -m "Update listings" && git push)
           fi
 

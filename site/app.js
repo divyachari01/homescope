@@ -667,14 +667,17 @@
     const y = m.year_ago || {};
     const line = (lab, key, fmt) => m[key] == null ? "" : `<tr><td>${lab}</td><td>${fmt(m[key])}</td><td>${y[key] == null ? "" : fmt(y[key])}</td></tr>`;
     $("#s-market").innerHTML = `<h2>Buyer's or seller's market: ${m.label || "n/a"}</h2>
-      <div class="asof">Redfin, homes sold in the 3 months to ${m.month}${y.label ? `. A year earlier it was: ${y.label.toLowerCase()}` : ""}</div>
+      <div class="asof">${NAT.asof.market_source || "Redfin"}, ${m.month}${y.label ? `. A year earlier it was: ${y.label.toLowerCase()}` : ""}</div>
       <div class="table-wrap"><table><tr><th></th><th>Now</th><th>A year ago</th></tr>
         ${line("Months of supply (under 4 favours sellers, over 6 favours buyers)", "months_supply", v => v.toFixed(1))}
         ${line("Typical days to go under contract", "dom", v => Math.round(v))}
         ${line("Sale price vs asking", "sale_to_list", v => pct(v * 100, 1))}
         ${line("Sold above asking", "above_list", v => pct(v * 100, 0))}
         ${line("Listings with a price cut", "price_drops", v => pct(v * 100, 0))}
+        ${line("Pending sales per active listing (higher favours sellers)", "pending_ratio", v => v.toFixed(2))}
         ${line("Homes sold", "homes_sold", v => Math.round(v))}
+        ${line("Homes listed for sale", "inventory", v => Math.round(v))}
+        ${line("Median asking price", "median_list", v => k(v))}
       </table></div>
       <p class="note">In a buyer's market you have room to negotiate on price and repairs; in a seller's market expect competing offers.</p>`;
   }

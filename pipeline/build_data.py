@@ -14,6 +14,7 @@ Optional environment variable:
     CENSUS_API_KEY   free key from https://api.census.gov/data/key_signup.html
 """
 import argparse
+import traceback
 import hashlib
 import datetime as dt
 import json
@@ -63,6 +64,8 @@ SOURCES = {
     "nri": (["https://hazards.fema.gov/nri/Content/StaticDocuments/DataDownload//NRI_Table_CensusTracts/NRI_Table_CensusTracts.zip",
              "https://hazards.fema.gov/nri/Content/StaticDocuments/DataDownload/NRI_Table_CensusTracts/NRI_Table_CensusTracts.zip"],
             "nri_tracts.zip", False, 90),
+    "realtor": ("https://econdata.s3-us-west-2.amazonaws.com/Reports/Core/RDC_Inventory_Core_Metrics_Zip_History.csv",
+                "realtor_zip.csv", False, 7),
     "redfin": ("https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_market_tracker/zip_code_market_tracker.tsv000.gz",
                "redfin_zip.tsv.gz", False, 7),
     "fed": ("https://markets.newyorkfed.org/api/rates/unsecured/effr/search.json?startDate=2000-07-03&endDate="
@@ -147,6 +150,10 @@ def download(url, path, tries=3):
                     shutil.copyfileobj(r.raw, f)
             if tmp.stat().st_size < 200:
                 raise ValueError("file looks empty")
+            with open(tmp, "rb") as f:
+                head = f.read(200).lstrip().lower()
+            if head.startswith((b"<!doctype html", b"<html")) and not url.endswith((".html", ".htm")):
+                raise ValueError("got a web page instead of a data file")
             tmp.replace(path)
             return
         except Exception:  # noqa: BLE001
@@ -330,7 +337,10 @@ def load_elections():
             f = next(x for x in files if "countypres" in x["dataFile"]["filename"].lower()
                      and not x["dataFile"]["filename"].lower().endswith((".md", ".pdf", ".txt")))
             fid = f["dataFile"]["id"]
-            download(f"https://dataverse.harvard.edu/api/access/datafile/{fid}?format=original", path)
+            try:
+                download(f"https://dataverse.harvard.edu/api/access/datafile/{fid}?format=original", path)
+            except Exception:  # noqa: BLE001
+                download(f"https://dataverse.harvard.edu/api/access/datafile/{fid}", path)
             log("  downloaded elections")
         except Exception as e:  # noqa: BLE001
             log(f"  WARNING: elections download failed: {e}")
@@ -374,8 +384,13 @@ def load_elections():
 def load_chr(path):
     """County Health Rankings analytic file -> {county fips: (violent crime per 100k, release year)}."""
     df = pd.read_csv(path, dtype=str, low_memory=False)
-    fcol = next(c for c in df.columns if "5-digit fips" in c.lower() or c.lower() == "fipscode")
-    ccol = next(c for c in df.columns if "violent crime raw value" in c.lower() or c.lower() == "v043_rawvalue")
+    if "fipscode" in df.iloc[0].astype(str).str.lower().tolist() and not any("fips" in c.lower() for c in df.columns):
+        df.columns = df.iloc[0].astype(str)
+        df = df.iloc[1:]
+    fcol = next((c for c in df.columns if "5-digit fips" in c.lower() or c.lower() == "fipscode"), None)
+    ccol = next((c for c in df.columns if "violent crime raw value" in c.lower() or c.lower() == "v043_rawvalue"), None)
+    if not fcol or not ccol:
+        raise ValueError(f"expected columns not found; first columns: {list(df.columns)[:8]}")
     ycol = next((c for c in df.columns if "release year" in c.lower() or c.lower() == "year"), None)
     df = df[df[fcol].str.fullmatch(r"\d{4,5}", na=False)]
     df["fips"] = df[fcol].str.zfill(5)
@@ -651,14 +666,22 @@ def main():
     except Exception as e:  # noqa: BLE001
         log(f"  WARNING: surrounding-area comparison skipped: {e!r}")
     try:
-        hazard = extras.hazards_by_zip(fetch("nri"), fetch("zip_tract"))
+        nri = fetch("nri")
+        if nri is None and not OFFLINE:
+            nri = RAW / "nri_tracts.csv"
+            if not nri.exists() or time.time() - nri.stat().st_mtime > 90 * 86400:
+                extras.nri_from_arcgis(SESSION, nri)
+                log("  downloaded NRI (ArcGIS copy)")
+        hazard = extras.hazards_by_zip(nri, fetch("zip_tract"))
         asof["hazards"] = "FEMA National Risk Index"
     except Exception as e:  # noqa: BLE001
         log(f"  WARNING: natural hazards skipped: {e!r}")
     try:
-        mk = extras.redfin_market(fetch("redfin"))
+        rf = fetch("redfin")
+        mk = extras.redfin_market(rf) if rf else extras.realtor_market(fetch("realtor"))
         mk_year = extras.market_by_year(mk)
         asof["market"] = str(mk["month"].max())
+        asof["market_source"] = "Redfin" if rf else "Realtor.com"
     except Exception as e:  # noqa: BLE001
         log(f"  WARNING: buyer/seller market skipped: {e!r}")
     try:
@@ -676,6 +699,7 @@ def main():
                                                  county_votes, laws_table(), crime, fed, mk_year, hazard)
     except Exception as e:  # noqa: BLE001
         log(f"  WARNING: forecast skipped: {e!r}")
+        log(traceback.format_exc())
 
     # ---------- write zip shards
     log("Writing zip files")

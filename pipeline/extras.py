@@ -67,11 +67,33 @@ def surrounding(points, values, weights, radius_mi=5.0):
 
 # ---------------------------------------------------------------- FEMA National Risk Index
 
+NRI_ARCGIS = "https://arcgis.netl.doe.gov/server/rest/services/Hosted/CCS_EJ_SJ_Data/FeatureServer/34/query"
+
+
+def nri_from_arcgis(session, out_csv):
+    """Backup source: page through a public ArcGIS copy of FEMA's tract table and save it as CSV."""
+    fields = ["tractfips", "risk_score", "eal_valb", "buildvalue"] + [f"{c.lower()}_risks" for c in HAZARDS]
+    rows, offset = [], 0
+    while True:
+        r = session.get(NRI_ARCGIS, timeout=120, params={
+            "where": "1=1", "outFields": ",".join(fields), "returnGeometry": "false", "f": "json",
+            "resultOffset": offset, "resultRecordCount": 2000, "orderByFields": "objectid"})
+        r.raise_for_status()
+        feats = r.json().get("features", [])
+        if not feats:
+            break
+        rows += [f["attributes"] for f in feats]
+        offset += len(feats)
+    if len(rows) < 1000:
+        raise ValueError(f"only {len(rows)} tracts returned")
+    pd.DataFrame(rows).to_csv(out_csv, index=False)
+
+
 def hazards_by_zip(nri_zip, zcta_tract_path):
     """FEMA National Risk Index (census tracts) averaged to zips, weighted by land area.
     Returns DataFrame: risk (0-100 score), loss_rate (expected yearly loss to buildings as % of
     building value) and one 0-100 score per hazard."""
-    nri = read_zipped_table(nri_zip)
+    nri = read_zipped_table(nri_zip) if str(nri_zip).endswith(".zip") else pd.read_csv(nri_zip, dtype=str)
     nri.columns = [c.strip().upper() for c in nri.columns]
     tract = nri["TRACTFIPS"].str.zfill(11)
     cols = {"risk": "RISK_SCORE"}
@@ -140,11 +162,37 @@ def redfin_market(path):
     return df.dropna(subset=["zip"])[keep].drop_duplicates(["zip", "month"], keep="last")
 
 
+def realtor_market(path):
+    """Realtor.com zip inventory history -> same monthly table shape as redfin_market."""
+    df = pd.read_csv(path, dtype=str)
+    df.columns = [c.strip().lower() for c in df.columns]
+    df = df[df["month_date_yyyymm"].str.fullmatch(r"\d{6}", na=False)]
+    num = lambda c: pd.to_numeric(df.get(c), errors="coerce")  # noqa: E731
+    active = num("active_listing_count")
+    out = pd.DataFrame({
+        "zip": df["postal_code"].str.zfill(5),
+        "month": pd.PeriodIndex(df["month_date_yyyymm"].str[:4] + "-" + df["month_date_yyyymm"].str[4:], freq="M"),
+        "dom": num("median_days_on_market"),
+        "price_drops": num("price_reduced_count") / active.replace(0, np.nan),
+        "pending_ratio": num("pending_ratio"),
+        "inventory": active,
+        "median_list": num("median_listing_price"),
+    })
+    return out.dropna(subset=["zip"]).drop_duplicates(["zip", "month"], keep="last")
+
+
 def market_label(row):
     """Plain buyer's / seller's market call, mainly from months of supply (the usual rule of thumb)."""
     ms, stl, dom = row.get("months_supply"), row.get("sale_to_list"), row.get("dom")
     if ms is not None and np.isfinite(ms):
         return "Seller's market" if ms < 4 else "Buyer's market" if ms > 6 else "Balanced"
+    pr, cuts = row.get("pending_ratio"), row.get("price_drops")
+    if pr is not None and np.isfinite(pr):          # Realtor.com: pending sales per active listing
+        if pr >= 0.6 and (dom is None or not np.isfinite(dom) or dom < 45):
+            return "Seller's market"
+        if pr < 0.3 or (cuts is not None and np.isfinite(cuts) and cuts > 0.3):
+            return "Buyer's market"
+        return "Balanced"
     if stl is not None and np.isfinite(stl):
         if stl >= 1.0 and (dom is None or not np.isfinite(dom) or dom < 30):
             return "Seller's market"
@@ -158,7 +206,7 @@ def market_by_year(mk):
     """Yearly averages of the market measures, for the forecast model: {year: DataFrame by zip}."""
     mk = mk.copy()
     mk["year"] = mk["month"].dt.year
-    cols = [c for c in ("dom", "sale_to_list", "above_list", "price_drops", "months_supply") if c in mk]
+    cols = [c for c in ("dom", "sale_to_list", "above_list", "price_drops", "months_supply", "pending_ratio") if c in mk]
     g = mk.groupby(["year", "zip"])[cols].mean()
     return {int(y): sub.droplevel(0) for y, sub in g.groupby(level=0)}
 

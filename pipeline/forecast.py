@@ -33,7 +33,7 @@ LABELS = {
     "log_income": "Household income", "income_growth": "Income growth", "rent_growth": "Rent growth",
     "stocks_1y": "Stock market, last year", "fed_rate": "Fed interest rate", "fed_change_1y": "Fed rate change, 1 yr",
     "mkt_dom": "Days homes take to sell", "mkt_sale_to_list": "Sale vs asking price", "mkt_above_list": "Share sold above asking",
-    "mkt_price_drops": "Share of listings with price cuts", "mkt_months_supply": "Months of supply (buyer/seller market)",
+    "mkt_price_drops": "Share of listings with price cuts", "mkt_pending_ratio": "Pending sales per listing", "mkt_months_supply": "Months of supply (buyer/seller market)",
     "hazard_risk": "Natural hazard risk", "hazard_loss": "Expected hazard losses", "stocks_5y": "Stock market, 5-yr trend", "college": "College-educated share",
     "college_change": "Change in college share", "poverty": "Poverty rate", "unemployment": "Unemployment",
     "renter_share": "Share of renters", "rent_vacancy": "Empty rentals", "log_pop": "Population",
@@ -130,7 +130,7 @@ def fit(X, y, q):
 
 def run(P, acs, macro, votes, static, market, log=print):
     """Train, test and predict. Returns (per-zip forecasts, model summary)."""
-    P = P.dropna(how="all")
+    P = P.where(P > 0).dropna(how="all")          # zero or negative prices are data errors
     now = max(P.columns)                                    # latest (possibly partial) year
     last_full = now - 1
     rows = {}
