@@ -51,8 +51,9 @@ const Deal = (() => {
       if (!c.sold || groupOf(c.type) !== g || c.address === s.formattedAddress) continue;
       const dist = s.latitude && c.lat ? miles(s.latitude, s.longitude, c.lat, c.lon) : 1.5;
       if (dist > 3) continue;
-      const size = s.squareFootage && c.sqft ? c.sqft / s.squareFootage : null;
-      if (size && (size < 0.65 || size > 1.5)) continue;
+      if (s.squareFootage && !c.sqft) continue;              // size unknown: can't compare
+      const size = s.squareFootage ? c.sqft / s.squareFootage : null;
+      if (size && (size < 0.75 || size > 1.33)) continue;
       const bedGap = s.bedrooms != null && c.bedrooms != null ? Math.abs(s.bedrooms - c.bedrooms) : 0;
       if (bedGap > 1) continue;
       const ago = c.date ? Math.max(0, monthsBetween(c.date, today)) : 6;
@@ -71,37 +72,53 @@ const Deal = (() => {
              dom: med(sold.filter(c => c !== skip).map(c => c.dom)) };
   }
 
-  // The offer rule. F = fair value, L = asking price, m = typical sale-to-list here.
-  function offerRule(L, F, m, dom, zipDom) {
+  // The offer rule. L = asking price, F = fair value, m = typical sale-to-list here. The target is
+  // what homes like this have been selling for (asking x m), pulled toward fair value by weight w,
+  // with a discount d for listings that have sat much longer than usual. w and d are picked per zip
+  // by replaying the rule on its recent sales (see backtest).
+  function offerRule(L, F, m, dom, zipDom, w = 0.2, d = 0.97, k = 1) {
     m = Number.isFinite(m) ? Math.min(1.08, Math.max(0.9, m)) : 0.98;
-    let o = Number.isFinite(F) ? Math.min(L * m, F * Math.max(m, 0.97)) : L * m;
+    const ratio = Number.isFinite(F) ? Math.min(1.25, Math.max(0.8, F / L)) : 1;
+    let o = L * Math.pow(m, k) * Math.pow(ratio, w);
     const stale = dom != null && dom > Math.max(60, 1.5 * (Number.isFinite(zipDom) ? zipDom : 45));
-    if (stale) o *= 0.97;
-    return { offer: Math.max(o, L * 0.88), stale, m };
+    if (stale) o *= d;
+    return { offer: Math.max(o, L * 0.85), stale, m };
   }
 
-  // Replays the rule on each recent sale using only the other sales, and compares with what it sold for.
+  // Replays the rule on each recent sale, using only the other sales for fair value and
+  // sale-to-list, and picks the weights that came closest to the real sale prices.
   function backtest(sold, idx, today) {
-    const res = [];
+    const cases = [];
     for (const h of sold) {
       if (!h.sold || !h.list || h.sold / h.list < 0.75 || h.sold / h.list > 1.25) continue;
       const s = { formattedAddress: h.address, propertyType: h.type, latitude: h.lat, longitude: h.lon, squareFootage: h.sqft, bedrooms: h.bedrooms };
       const others = sold.filter(c => c !== h);
       const cs = comps(s, others, idx, h.date || today);
-      if (cs.length < 3) continue;
       const back = idx.factor(h.date) || 1;               // comps are in today's prices; bring them back to the sale date
-      const F = med(cs.map(c => c.value)) / back;
+      const F = cs.length >= 3 ? med(cs.map(c => c.value)) / back : NaN;
       const comp = competition(others);
-      const { offer } = offerRule(h.list, F, comp.stl, h.dom, comp.dom);
-      res.push({ fairErr: F / h.sold - 1, listErr: h.list / h.sold - 1, offerErr: offer / h.sold - 1 });
+      cases.push({ h, F, m: comp.stl, zipDom: comp.dom });
     }
-    if (res.length < 5) return { n: res.length };
-    const abs = a => a.map(Math.abs);
-    return { n: res.length,
-      fairMiss: med(abs(res.map(r => r.fairErr))) * 100, listMiss: med(abs(res.map(r => r.listErr))) * 100,
-      offerMiss: med(abs(res.map(r => r.offerErr))) * 100, offerBias: med(res.map(r => r.offerErr)) * 100,
-      within5: res.filter(r => Math.abs(r.offerErr) <= 0.05).length / res.length * 100,
-      atOrAbove: res.filter(r => r.offerErr >= -0.01).length / res.length * 100 };
+    if (cases.length < 8) return { n: cases.length };
+    const score = (w, d, k) => {
+      const e = cases.map(c => offerRule(c.h.list, c.F, c.m, c.h.dom, c.zipDom, w, d, k).offer / c.h.sold - 1);
+      return { e, miss: med(e.map(Math.abs)) };
+    };
+    let best = null;
+    for (const k of [1]) for (const w of [0, 0.1, 0.2, 0.3, 0.5]) for (const d of [1, 0.98, 0.96]) {
+      const r = score(w, d, k);
+      if (!best || r.miss < best.miss - 1e-9) best = { w, d, k, ...r };
+    }
+    const plain = score(0, 1, 1), withF = cases.filter(c => Number.isFinite(c.F));
+    // Chance-of-winning ladder: share of recent sales that closed at or below each share of asking.
+    const ratios = cases.map(c => c.h.sold / c.h.list);
+    const ladder = [0.94, 0.96, 0.98, 1, 1.02, 1.04].map(f => ({ f, beat: ratios.filter(r => r <= f + 1e-9).length / ratios.length * 100 }));
+    return { n: cases.length, w: best.w, d: best.d, k: best.k, ladder,
+      offerMiss: best.miss * 100, offerBias: med(best.e) * 100, plainMiss: plain.miss * 100,
+      within5: best.e.filter(x => Math.abs(x) <= 0.05).length / best.e.length * 100,
+      atOrAbove: best.e.filter(x => x >= -0.01).length / best.e.length * 100,
+      fairMiss: withF.length ? med(withF.map(c => Math.abs(c.F / c.h.sold - 1))) * 100 : NaN,
+      listMiss: med(cases.map(c => Math.abs(c.h.list / c.h.sold - 1))) * 100 };
   }
 
   // Words in the listing description that point to updates or to problems.
@@ -160,6 +177,14 @@ const Deal = (() => {
     const cs = comps(s, sold, idx, today);
     if (cs.length >= 3) reads.push({ name: `${cs.length} similar homes sold nearby`, value: med(cs.map(c => c.value)), w: cs.length >= 5 ? 2 : 1,
       lo: q(cs.map(c => c.value), 0.25), hi: q(cs.map(c => c.value), 0.75) });
+    else if (ctx.active) {
+      // No usable sale prices (e.g. a non-disclosure state): compare with similar homes listed now, at asking.
+      const act = ctx.active.filter(a => a.price && a.id !== s.id).map(a => ({ address: a.formattedAddress, type: a.propertyType, sold: a.price,
+        date: today, sqft: a.squareFootage, bedrooms: a.bedrooms, lat: a.latitude, lon: a.longitude }));
+      const ca = comps(s, act, idx, today);
+      if (ca.length >= 3) reads.push({ name: `${ca.length} similar homes listed now (their asking prices)`, value: med(ca.map(c => c.value)), w: 0.75,
+        lo: q(ca.map(c => c.value), 0.25), hi: q(ca.map(c => c.value), 0.75), asking: true });
+    }
     let flip = false, lastIdx = null;
     if (s.lastSoldPrice && s.lastSoldDate) {
       const f = idx.factor(s.lastSoldDate), yrs = monthsBetween(s.lastSoldDate, today) / 12;
@@ -170,7 +195,10 @@ const Deal = (() => {
           note: flip ? "left out: price jumped since, so it was likely renovated" : "" });
       }
     }
-    if (s.estimate) reads.push({ name: "Realtor.com's automated estimate", value: s.estimate, w: 1 });
+    const ests = (s.estimates || []).filter(e => e.value);
+    if (ests.length) ests.forEach(e => reads.push({ name: `${e.name || "Automated"} estimate (via Realtor.com)`, value: e.value, w: 1.5 / ests.length,
+      lo: e.low, hi: e.high }));
+    else if (s.estimate) reads.push({ name: "Realtor.com's automated estimate", value: s.estimate, w: 1 });
     const used = reads.filter(r => r.w > 0);
     const F = used.length ? used.reduce((a, r) => a + r.value * r.w, 0) / used.reduce((a, r) => a + r.w, 0) : NaN;
 
@@ -178,11 +206,12 @@ const Deal = (() => {
     const mk = rec.market || {};
     const stl = comp.n >= 8 ? comp.stl : mk.sale_to_list ?? NaN;
     const zipDom = comp.n >= 8 ? comp.dom : mk.dom ?? NaN;
-    const rule = offerRule(L, F, stl, s.daysOnMarket, zipDom);
+    const bt = backtest(sold, idx, today);
+    const rule = offerRule(L, F, stl, s.daysOnMarket, zipDom, bt.w ?? 0.2, bt.d ?? 0.97, bt.k ?? 1);
     const label = mk.label || (rule.m >= 1 ? "Seller's market" : rule.m < 0.97 ? "Buyer's market" : "Balanced");
     const hot = label === "Seller's market" || rule.m >= 1, soft = label === "Buyer's market" || rule.stale;
     const opening = rule.offer * (hot ? 1 : soft ? 0.97 : 0.985);
-    const walk = Math.min(Number.isFinite(F) ? F * Math.max(1, rule.m) * 1.03 : L * Math.max(1, rule.m), ctx.maxPrice || Infinity);
+    const walk = Math.min(Math.max(rule.offer, Number.isFinite(F) ? F : 0) * 1.03, ctx.maxPrice || Infinity);
     const gap = Number.isFinite(F) ? (L / F - 1) * 100 : NaN;
 
     // Taxes, land, building
@@ -193,14 +222,18 @@ const Deal = (() => {
     const landShare = withLand ? withLand[2] / withLand[4] : null;
     const taxTrend = th.length >= 4 && th[0][1] && th[th.length - 1][1] ? (Math.pow(th[0][1] / th[th.length - 1][1], 1 / (th[0][0] - th[th.length - 1][0])) - 1) * 100 : null;
 
-    const text = s.text || "";
+    const featLines = Object.values(s.features || {}).flat();
+    const text = [s.text || "", ...featLines].join(" . ");
+    const facts = featLines.filter(t => /foundation|construction material|roof|siding|exterior|structure|heating features|cooling features|sewer|water source|basement|common walls/i.test(t)
+      && !/:\s*(?:no|none|0)$/i.test(t));
     return {
       L, F, gap, reads, comps: cs, comp, stl: rule.m, zipDom, stale: rule.stale, label, hot, soft,
       offer: rule.offer, opening, walk, overBudget: ctx.maxPrice && walk < rule.offer, maxPrice: ctx.maxPrice,
       flip, lastIdx, taxNow, taxAfter, taxTrend, landShare, landValue: landShare && Number.isFinite(F) ? landShare * F : null,
-      good: scan(text, GOOD), bad: scan(text, BAD), build: scan(text, BUILD),
+      good: scan(text, GOOD), bad: scan(text, BAD), build: scan(text, BUILD), facts: [...new Set(facts)].slice(0, 12),
+      views7: s.views7, saves7: s.saves7,
       loans: loans(rule.offer, o, s.hoa, ctx.rate15),
-      backtest: backtest(sold, idx, today), nonDisclosure: NON_DISCLOSURE.has(rec.state) && sold.length < 8,
+      backtest: bt, nonDisclosure: NON_DISCLOSURE.has(rec.state) && sold.length < 8,
       soldCount: sold.length,
     };
   }

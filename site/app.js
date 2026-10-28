@@ -111,7 +111,7 @@
       if (!r.ok) throw new Error(j.error || r.status);
       liveCache.set(z, j); liveState.delete(z);
       j.mapState = "loading";
-      if (z === zip) { listing = j; renderListings(inputs()); }
+      if (z === zip) { listing = j; renderAll(); }
       // then add facing, walkable places and noise from the street map, right here in the browser
       try { await Orient.addTo(j.sale); j.mapState = "done"; } catch (e) { j.mapState = "failed"; }
       if (z === zip) renderListings(inputs());
@@ -162,6 +162,7 @@
     if (!listing && API) loadLive(zip);
     try { localStorage.setItem("hc-zip", zip); } catch (e) { /* ignore */ }
     history.replaceState(null, "", `?zip=${zip}`);
+    if (deal && deal.zip !== zip) deal = null;
     target = { type: rec.zhvi_now?.all ? "all" : "custom", custom: rec.zhvi_now?.all ? null : rec.acs?.home_value || 300000 };
     $("#status").textContent = "";
     $("#results").hidden = false;
@@ -194,7 +195,22 @@
     if (target.type === "custom") return target.custom || 0;
     return rec.zhvi_now?.[target.type] || rec.zhvi_now?.all || rec.acs?.home_value || 0;
   }
-  const typicalRent = () => rec.zori_now || rec.acs?.rent || null;
+  // Typical rent for the selected kind of home. Zillow's rent index and the Census mix apartments
+  // with houses, so when enough rentals of the same kind are listed now, their median is used.
+  function listedRent() {
+    if (!listing || listing.zip !== zip) return null;
+    const condo = target.type === "condo";
+    const r = (listing.rent || []).filter(x => x.price > 200 && (condo ? ["Condo", "Apartment"].includes(x.propertyType) : x.propertyType === "Single Family")).map(x => x.price);
+    if (r.length < 8) return null;
+    const p = target.type === "bottom" ? 30 : target.type === "top" ? 70 : 50;
+    return { v: Calc.percentile(r, p), n: r.length, kind: condo ? "condos and apartments" : "houses" };
+  }
+  const typicalRent = () => listedRent()?.v || rec.zori_now || rec.acs?.rent || null;
+  function rentSource() {
+    const l = listedRent();
+    if (l) return `median of ${l.n} ${l.kind} for rent now${rec.zori_now ? `; Zillow's all-rentals index: ${money(rec.zori_now)}` : ""}`;
+    return rec.zori_now ? "Zillow rent index (all rentals, incl. apartments)" : "Census median rent (all rentals)";
+  }
   function cpiFactor(year) {
     const c = NAT.cpi, last = c.v[c.v.length - 1], v = c.v[year - c.start];
     return v ? last / v : null;
@@ -215,8 +231,10 @@
   // ---------------------------------------------------------------- render
   function renderAll() {
     const o = inputs();
-    renderHead();
+    renderHead(o);
     renderSummary(o);
+    renderFind();
+    renderDeal(o);
     renderMarket();
     renderPrices();
     renderBuying(o);
@@ -231,11 +249,19 @@
     renderSchools();
   }
 
-  function renderHead() {
+  function renderHead(o) {
     const place = [rec.city, rec.county, rec.state].filter(Boolean).join(", ");
+    const mp = Calc.maxPrice(o), tp = targetPrice(o), bits = [];
+    if (tp) bits.push(mp.price >= tp ? `You can afford the ${typeName()} here.` : `The ${typeName()} here is ${k(tp - mp.price)} over your budget.`);
+    if (rec.market?.label) bits.push(`${rec.market.label}${rec.market.dom ? `, homes take about ${Math.round(rec.market.dom)} days to sell` : ""}.`);
+    const risks = (rec.hazard?.top || []).filter(([, , lab]) => /very high|relatively high/i.test(lab || "")).slice(0, 2).map(([n]) => n.toLowerCase());
+    if (risks.length) bits.push(`Main natural risks: ${risks.join(" and ")}.`);
     $("#s-head").innerHTML = `<h2>${zip}${place ? " &middot; " + esc(place) : ""}</h2>
-      <div class="asof">${rec.metro ? esc(rec.metro) + " metro &middot; " : ""}Each section notes how recent its data is.</div>`;
+      <div class="asof">${rec.metro ? esc(rec.metro) + " metro &middot; " : ""}Each section notes how recent its data is.</div>
+      ${bits.length ? `<p class="bottom">${bits.join(" ")}</p>` : ""}`;
   }
+  const typeName = () => (TYPES.find(t => t[0] === target.type) || TYPES[0])[1].replace(/ \(.*\)/, "").toLowerCase().replace("my own price", "home at your price");
+  const hint = (id, text) => { const el = document.getElementById(id); if (el) el.innerHTML = text ? "&middot; " + text : ""; };
 
   function card(label, value, sub, pill) {
     return `<div class="card"><div class="k">${label}</div><div class="v">${value}</div>
@@ -244,7 +270,7 @@
   const pctSub = (p, text) => Number.isFinite(p) ? `${text} ${ord(Math.round(p))} of US zips` : "";
 
   function renderSummary(o) {
-    const out = [];
+    const out = [], more = [];
     const now = rec.zhvi_now?.all, rr = rec.zhvi_recent?.v || [];
     const yoy = rr.length > 12 && rr[rr.length - 13] ? (rr[rr.length - 1] / rr[rr.length - 13] - 1) * 100 : NaN;
     if (now) out.push(card("Typical home value", k(now), `${signed(yoy)} over the last year`));
@@ -258,23 +284,29 @@
       tp ? (mp.price >= tp ? `<span class="pill">Covers the ${TYPES.find(t => t[0] === target.type)[1].toLowerCase()}</span>`
                           : `<span class="pill warn">${k(tp - mp.price)} short of the selected home</span>`) : ""));
     const ind = rec.ind || {}, p = rec.pct || {};
-    if (ind.price_to_income) out.push(card("Price to income", ind.price_to_income.toFixed(1) + "x",
+    if (rec.market?.label) out.push(card("Market", rec.market.label.replace(" market", ""), [rec.market.dom ? `${Math.round(rec.market.dom)} days to sell` : "",
+      rec.market.price_drops != null ? `${pct(rec.market.price_drops * 100, 0)} of listings cut their price` : ""].filter(Boolean).join(" &middot; ")));
+    const fc1 = rec.fc?.["1"];
+    if (fc1) out.push(card("Price outlook, next year", signed(fc1[1]), `likely; range ${signed(fc1[0])} to ${signed(fc1[2])} (model forecast)`));
+    if (rec.hazard?.label) out.push(card("Natural hazard risk", rec.hazard.label, (rec.hazard.top || []).slice(0, 2).map(([n]) => esc(n)).join(", ")));
+    const sd = rec.schools?.district;
+    if (sd) out.push(card("School district", sd.n10 ? `${sd.n10}/10` : `Grade ${sd.grade}`, `${esc(sd.name)}${sd.s10 ? `: ${sd.n10}/10 nationally, ${sd.s10}/10 in ${esc(rec.state)}` : ""}`));
+    const rent = typicalRent(), rs = rentSource();
+    if (rent) out.push(card("Typical rent", money(rent) + "/mo", rs));
+    if (ind.price_to_income) more.push(card("Price to income", ind.price_to_income.toFixed(1) + "x",
       pctSub(p.price_to_income, "Homes cost more relative to income than") || "home value / median income"));
-    const rent = typicalRent();
-    if (rent) out.push(card("Typical rent", money(rent) + "/mo",
-      ind.rent_yield ? `Yearly rent is ${pct(ind.rent_yield)} of home value (${ord(Math.round(p.rent_yield || 0))} pct)` : (rec.zori_now ? "" : "Census median rent")));
-    if (rec.acs?.income) out.push(card("Median household income", money(rec.acs.income),
+    if (rec.acs?.income) more.push(card("Median household income", money(rec.acs.income),
       Number.isFinite(ind.income_change) ? `${signed(ind.income_change)} in 10 yrs after inflation` : ""));
-    if (rec.acs?.renter_share != null) out.push(card("Renters", pct(rec.acs.renter_share, 0) + " of homes",
+    if (rec.acs?.renter_share != null) more.push(card("Renters", pct(rec.acs.renter_share, 0) + " of homes",
       `${pct(rec.acs.rent_vacancy)} of rentals sit empty`));
-    if (ind.crime != null) out.push(card(`${crimeName()} (county)`, Math.round(ind.crime) + " per 100k", pctSub(p.crime, "Higher than")));
+    if (ind.crime != null) more.push(card(`${crimeName()} (county)`, Math.round(ind.crime) + " per 100k", pctSub(p.crime, "Higher than")));
     const car = STATES[rec.state]?.car_insurance, carQ = STATES[rec.state]?.car_quote;
-    if (carQ || car) out.push(card("Car insurance (state)", carQ ? `${money(carQ)}/mo` : `${money(car)}/yr`,
+    if (carQ || car) more.push(card("Car insurance (state)", carQ ? `${money(carQ)}/mo` : `${money(car)}/yr`,
       carQ ? `Typical full-coverage quote, Sep 2026 (Insurify).${car ? ` Average actually paid in 2024: ${money(car / 12)}/mo (NAIC)` : ""}` : "Average paid per car, 2024 (NAIC)"));
     const v = rec.votes, sv = STATES[rec.state]?.votes;
     if (v || sv) {
       const src = v || sv, i = src.years.length - 1, m = src.rep[i] - src.dem[i];
-      out.push(card(`${src.years[i]} president (${v ? "county" : "state"})`, `${m > 0 ? "R" : "D"} +${Math.abs(m).toFixed(0)}`,
+      more.push(card(`${src.years[i]} president (${v ? "county" : "state"})`, `${m > 0 ? "R" : "D"} +${Math.abs(m).toFixed(0)}`,
         `R ${src.rep[i]}% &middot; D ${src.dem[i]}%` + (v && sv ? ` &middot; state ${sv.rep[sv.rep.length - 1] > sv.dem[sv.dem.length - 1] ? "R" : "D"} +${Math.abs(sv.rep[sv.rep.length - 1] - sv.dem[sv.dem.length - 1]).toFixed(0)}` : "")));
     }
     if (work && rec.lat != null) {
@@ -282,13 +314,14 @@
       out.push(card("Drive to work", t ? t.replace(" drive to work", "") : "...", "from the centre of this zip, without traffic"));
       if (!t) fetchDrives([[rec.lat, rec.lon]]).then(ch => { if (ch && rec) renderSummary(inputs()); });
     }
-    if (rec.jobs) out.push(card("Jobs in the county", rec.jobs.jobs_change != null ? signed(rec.jobs.jobs_change) : "n/a",
+    if (rec.jobs) more.push(card("Jobs in the county", rec.jobs.jobs_change != null ? signed(rec.jobs.jobs_change) : "n/a",
       `over 5 years &middot; average pay ${money(rec.jobs.avg_pay)}`));
-    if (rec.schools?.district) out.push(card("School district", `Grade ${rec.schools.district.grade}`, `${esc(rec.schools.district.name)}: test scores above ${Math.round(rec.schools.district.pct)}% of US districts`));
     const lean = lawLean(STATES[rec.state]?.law);
-    if (lean) out.push(card("Landlord-tenant law", lean.label, esc(STATES[rec.state].name)));
-    if (rec.gent) out.push(card("Neighborhood change", rec.gent.replace("Signs of gentrification", "Gentrifying"), "10-year Census comparison"));
+    if (lean) more.push(card("Landlord-tenant law", lean.label, esc(STATES[rec.state].name)));
+    if (rec.gent) more.push(card("Neighborhood change", rec.gent.replace("Signs of gentrification", "Gentrifying"), "10-year Census comparison"));
     $("#s-summary").innerHTML = out.join("");
+    $("#s-more").innerHTML = more.join("");
+    hint("h-hood", [rec.acs?.income ? `median income ${money(rec.acs.income)}` : "", rec.gent || ""].filter(Boolean).join(", "));
   }
 
   // ---------------------------------------------------------------- prices
@@ -420,6 +453,7 @@
         ...(NAT.fed ? [{ label: "Fed funds rate", data: alignMonthly(NAT.fed, labels), borderColor: css("--c3"), pointRadius: 0, borderWidth: 1.5 }] : [])] },
       options: { scales: { x: { ticks: { maxTicksLimit: 10, callback: function (v) { return this.getLabelForValue(v).slice(0, 4); } } },
         y: { ticks: { callback: v => v + "%" } } }, plugins: { legend: { display: !!NAT.fed } } } });
+    hint("h-cost", `${money(m.total)}/mo for the ${typeName()} at ${o.ratePct}%`);
     $("#targetType").onchange = e => {
       target.type = e.target.value;
       if (target.type === "custom" && !target.custom) target.custom = Math.round(tp);
@@ -459,6 +493,7 @@
         `After ${o.H} years that leaves you about ${k(Math.abs(gap))} ${gap >= 0 ? "ahead of" : "behind"} renting the whole time (likely scenario). ` +
         (best.low.netWorth < rentOnly.low.netWorth ? `In the low scenario, renting would come out ahead.` : `It still beats renting in the low scenario.`);
     }
+    hint("h-future", [fc ? `likely ${signed(fc["1"][1])} next year, ${signed(fc["5"][1])} in 5 years` : "", best ? `best time to buy: ${best.k === 0 ? "now" : yr + best.k}` : ""].filter(Boolean).join("; "));
     const rows = buyRows.map(r => `<tr${best && r.k === best.k ? ' class="best"' : ""}>
       <td>${r.k === 0 ? "Now" : yr + r.k}</td><td>${k(r.mid.price)}</td><td>${r.mid.rate.toFixed(2)}%</td><td>${money(r.mid.payment)}</td>
       <td>${pct(r.mid.share, 0)}</td><td>${k(r.mid.need)} / ${k(r.mid.have)}</td><td>${r.mid.feasible ? "Yes" : r.mid.have < r.mid.need ? "Cash short" : "Payment too high"}</td>
@@ -583,6 +618,7 @@
         <p class="note">Living in one unit of a 2-4 unit building lets you use owner-occupant loans (lower rates, FHA from 3.5% down) instead of investor loans. In listings, look at "2-4 unit building". Renting a room or basement can need a permit, so check the city's rules.</p>`;
     }
     $("#s-purpose").innerHTML = html;
+    hint("h-purpose", ({ live: "to live in", rent: "as a rental", hack: "live in part, rent out part", str: "short-term rental" })[mode]);
   }
 
   // ---------------------------------------------------------------- neighborhood
@@ -643,6 +679,7 @@
     const st = STATES[rec.state];
     if (!st) { $("#s-law").innerHTML = ""; return; }
     const law = st.law, lean = lawLean(law), days = Number(law.nonpay_notice_days);
+    hint("h-law", `${lean.label.toLowerCase()} (${esc(st.name)})`);
     $("#s-law").innerHTML = `
       <h2>Politics and landlord-tenant law</h2>
       <div class="asof">Presidential results from MIT Election Lab${NAT.asof.elections ? ` through ${NAT.asof.elections}` : ""}. Law table checked October 2026; laws change, so confirm before you act.</div>
@@ -772,6 +809,7 @@
         ${r.f ? `<div style="margin-top:4px">Faces <b>${DIR_NAMES[r.f]}</b>${r.s.orient.street ? ` onto ${esc(r.s.orient.street)}` : ""}. Vaastu ${scorePill(r.vs?.pct)} <span class="note">(from ${r.vs?.checks || 0} of 8 checks)</span></div>
           <div class="note">${r.vr[1]}. ${FACING_LIGHT[r.f]}${r.s.orient.tjunction ? " <b>Feng Shui:</b> a street ends pointing at this house (T-junction)." : ""}${r.s.orient.corner ? " Corner lot." : ""}</div>` : ""}
         ${r.s.latitude ? `<div class="note">${r.s.url ? `<a href="${esc(r.s.url)}" target="_blank" rel="noopener">Listing</a> &middot; ` : ""}<a href="https://www.google.com/maps/@${r.s.latitude},${r.s.longitude},60m/data=!3m1!1e3" target="_blank" rel="noopener">Satellite view</a></div>` : ""}
+        <div class="row"><button type="button" data-deal="${esc(r.s.id || r.s.formattedAddress)}">Deal check: what to offer</button></div>
         <button type="button" class="link" data-short="${esc(r.s.id || r.s.formattedAddress)}">${shortlist[r.s.id || r.s.formattedAddress] ? "&#9733; Shortlisted (tap to remove)" : "&#9734; Shortlist for full Vaastu check"}</button>
       </div>`).join("")}</div>
       ${rows.length > 60 ? `<p class="note">Showing 60 of ${rows.length}.</p>` : ""}
@@ -786,6 +824,10 @@
       const pts = sale.filter(x => x.latitude).map(x => [x.latitude, x.longitude]);
       fetchDrives(pts).then(changed => { if (changed && listing && listing.zip === zip) renderListings(inputs()); });
     }
+    el.querySelectorAll("[data-deal]").forEach(b => b.onclick = () => {
+      const s = sale.find(x => (x.id || x.formattedAddress) === b.dataset.deal);
+      if (s) openDeal(s);
+    });
     el.querySelectorAll("[data-short]").forEach(b => b.onclick = () => {
       const s = sale.find(x => (x.id || x.formattedAddress) === b.dataset.short);
       if (s) toggleShortlist(s);
@@ -793,11 +835,187 @@
     });
   }
 
+  // ---------------------------------------------------------------- deal check for one house
+  let deal = null;                               // { id, zip, base: listing row, full: property record, state }
+  const fullCache = new Map();
+  let steps = {};
+  try { steps = JSON.parse(localStorage.getItem("hc-steps") || "{}"); } catch (e) { /* ignore */ }
+  const saveSteps = () => { try { localStorage.setItem("hc-steps", JSON.stringify(steps)); } catch (e) { /* ignore */ } };
+
+  // An address from a Realtor.com, Zillow or Redfin link, or the text as typed.
+  function addressFrom(text) {
+    const t = text.trim();
+    let m = t.match(/realestateandhomes-detail\/([^/?#]+)/);
+    if (m) { const p = m[1].split("_"); if (p.length >= 4) return `${p[0].replace(/-/g, " ")}, ${p[1].replace(/-/g, " ")}, ${p[2]} ${p[3]}`; }
+    m = t.match(/zillow\.com\/homedetails\/([^/?#]+)/);
+    if (m) return m[1].replace(/-/g, " ");
+    m = t.match(/redfin\.com\/([A-Z]{2})\/([^/]+)\/([^/]+)\/home/);
+    if (m) return `${m[3].replace(/-/g, " ").replace(/ (\d{5})$/, ", $1")}, ${m[2].replace(/-/g, " ")}, ${m[1]}`.replace(/, (\d{5}), (.+), ([A-Z]{2})$/, ", $2, $3 $1");
+    return t;
+  }
+  function renderFind() {
+    if (!API) { $("#s-find").innerHTML = ""; return; }
+    if ($("#findForm")) return;                       // keep what's typed
+    $("#s-find").innerHTML = `<h2>Check a house you found</h2>
+      <p class="note">Paste its address or a Realtor.com, Zillow or Redfin link for a deal check: fair price, what to offer, history, taxes, condition, risks and loan options. Or tap "Deal check" on any listing below.</p>
+      <form class="find" id="findForm"><input id="findAddr" type="text" placeholder="e.g. 123 Main St, Columbus, OH 43201" aria-label="House address or link"><button type="submit">Deal check</button></form>
+      <div class="note" id="findStatus"></div>`;
+    $("#findForm").onsubmit = async e => {
+      e.preventDefault();
+      const a = addressFrom($("#findAddr").value);
+      if (a.length < 6) return;
+      $("#findStatus").textContent = "Looking up the house...";
+      try {
+        const r = await fetch(`${API}/api/listings?address=${encodeURIComponent(a)}`), j = await r.json();
+        if (!r.ok || !j.home) throw new Error(j.error || "not found");
+        fullCache.set(j.home.id, j.home);
+        deal = { id: j.home.id, zip: j.home.zip, base: j.home };
+        if (j.home.zip && j.home.zip !== zip) { $("#zip").value = j.home.zip; await lookup(); }
+        else renderAll();
+        $("#s-deal").scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (err) { $("#findStatus").textContent = "Couldn't find that house. Try the full street address with city, state and zip."; }
+    };
+  }
+  async function openDeal(s) {
+    deal = { id: s.id || s.formattedAddress, zip, base: s };
+    renderDeal(inputs());
+    $("#s-deal").scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!fullCache.has(deal.id) && API && s.formattedAddress) {
+      try {
+        const r = await fetch(`${API}/api/listings?address=${encodeURIComponent(s.formattedAddress)}`), j = await r.json();
+        fullCache.set(deal.id, j.home || {});
+      } catch (e) { fullCache.set(deal.id, {}); }
+      if (deal && rec) renderDeal(inputs());
+    }
+  }
+
+  function renderDeal(o) {
+    const el = $("#s-deal");
+    if (!deal || deal.zip !== zip) { el.innerHTML = ""; return; }
+    const loadingFull = API && !fullCache.has(deal.id);
+    const s = { ...deal.base, ...(fullCache.get(deal.id) || {}) };
+    if (!s.price) { el.innerHTML = `<h2>${esc(s.formattedAddress || "")}</h2><p class="note">This house isn't listed for sale right now, so there's no asking price to check. ${s.lastSoldPrice ? `It last sold for ${money(s.lastSoldPrice)} on ${s.lastSoldDate}.` : ""}</p><button type="button" class="link" id="dealClose">Close</button>`; $("#dealClose").onclick = () => { deal = null; renderDeal(o); }; return; }
+    const oo = { ...o, hoa: s.hoa || o.hoa };
+    const hist = priceHistory();
+    const d = Deal.analyze(s, { sold: listing?.zip === zip ? listing.sold || [] : [], active: listing?.zip === zip ? listing.sale : null,
+      monthly: rec.zhvi_recent, yearly: hist, rec, o: oo, maxPrice: Calc.maxPrice(oo).price, rate15: NAT.rate15_latest?.value });
+    const bt = d.backtest, gapTxt = Number.isFinite(d.gap) ? (Math.abs(d.gap) < 3 ? "in line with" : `${Math.abs(d.gap).toFixed(0)}% ${d.gap > 0 ? "above" : "below"}`) : null;
+    const verdict = !Number.isFinite(d.F) ? "Not enough data for a value estimate, so the offer follows how homes here sell versus asking."
+      : d.gap > 8 ? "Asking price looks high for what similar homes are worth." : d.gap < -8 ? "Asking price is below the value estimates: a possible bargain, or something the photos don't show."
+      : "Asking price is about right for the area.";
+    const yrs = s.lastSoldDate ? (Date.now() - new Date(s.lastSoldDate)) / 3.156e10 : null;
+    const ins = d.offer * oo.insRate / 100, hz = rec.hazard, flood = (hz?.top || []).some(([n, , lab]) => /flood/i.test(n) && /high/i.test(lab || ""));
+
+    // the strategist's advice
+    const tips = [];
+    if (d.hot) tips.push(`Homes here often sell at or above asking${Number.isFinite(d.comp.above) && d.comp.n >= 8 ? ` (${pct(d.comp.above * 100, 0)} of recent sales went over)` : ""}. Lead with a clean offer: pre-approval letter, 1-3% earnest money and a flexible closing date. An escalation clause up to your walk-away price helps if there are other offers.`);
+    if (d.soft) tips.push(`Buyers have room to negotiate here${rec.market?.price_drops != null ? `: ${pct(rec.market.price_drops * 100, 0)} of listings in the zip have cut their price` : ""}. Open at ${k(d.opening)} and ask the seller to pay part of your closing costs (up to 3% on most conventional loans, 6% on FHA) or to buy down your rate.`);
+    if (d.stale) tips.push(`This house has been listed ${s.daysOnMarket} days, longer than most here (about ${Math.round(d.zipDom)}). The seller may take less: ask the listing agent about earlier offers and price cuts.`);
+    if (d.gap > 8) tips.push(`Asking is ${d.gap.toFixed(0)}% above the value estimates, so the bank's appraisal may come in low. Keep the appraisal contingency, and don't promise to cover an appraisal gap.`);
+    if (d.gap < -8) tips.push(`Asking is below the value estimates. Expect competition, and inspect carefully: underpricing can mean hidden problems.`);
+    if (d.flip) tips.push(`It sold for ${k(s.lastSoldPrice)} in ${s.lastSoldDate.slice(0, 4)} and is back at a much higher price, so it was likely renovated or flipped. Ask for permits and contractor invoices, and have the inspector check the new work.`);
+    if (d.bad.length) tips.push(`The listing mentions: ${d.bad.join(", ")}. Get repair quotes during the inspection period before you commit, and price them into your offer.`);
+    if (d.taxNow && d.taxAfter > d.taxNow * 1.15) tips.push(`The seller's tax bill is ${money(d.taxNow)} a year, but at your price expect about ${money(d.taxAfter)} (many places reassess at the sale price). Budget on the higher number.`);
+    if (s.hoa) tips.push(`HOA fee ${money(s.hoa)}/mo. Before you commit, get the HOA budget, reserve study, any planned special assessments and its rules on renting out.`);
+    if (flood) tips.push(`River or coastal flooding is a high risk in this zip. Check this address on FEMA's flood map and get a flood insurance quote before you offer.`);
+    tips.push(`Whatever the market, keep the inspection, financing and appraisal contingencies. Giving them up is what turns a bad surprise into lost money.`);
+
+    const STEPS = [
+      ["preapp", "Before the offer", "Get pre-approved, with rate quotes from 3 lenders on the same day"],
+      ["ask", "Before the offer", "Ask the listing agent: other offers, price cuts, the seller's timeline, disclosure form"],
+      ["permits", "Before the offer", "Look up permits on the city or county site and check the FEMA flood map"],
+      ["offer", "Day 0", "Send the offer with inspection, financing and appraisal contingencies"],
+      ["earnest", "Days 1-3", "Wire earnest money (confirm wiring instructions by phone: wire fraud is common)"],
+      ["inspect", "Days 1-10", `Inspections: general${s.yearBuilt && s.yearBuilt < 1980 ? ", sewer scope" : ""}, radon${/TX|FL|LA|GA|AL|MS|SC|NC|AZ|CA/.test(rec.state || "") ? ", termite" : ""}${d.bad.some(b => /foundation|water/.test(b)) ? ", structural engineer" : ""}`],
+      ["repairs", "Days 10-14", "Ask for repairs or a credit based on the inspection"],
+      ["lock", "Days 10-20", "Lock your interest rate"],
+      ["insure", "Days 10-25", `Buy homeowners insurance${flood ? " and flood insurance" : ""}`],
+      ["appraisal", "Days 7-21", "Appraisal; if it comes in low, renegotiate or use the contingency"],
+      ["ctc", "Days 21-35", "Final loan approval (clear to close); review the closing disclosure 3 days before"],
+      ["walk", "Day before closing", "Final walk-through: repairs done, nothing new broken"],
+      ["close", "Days 30-45", "Closing: sign, pay the rest of your down payment and costs, get the keys"]];
+    const done = steps[deal.id] || {};
+    const readRows = d.reads.map(r => `<tr><td>${esc(r.name)}${r.note ? ` <span class="note">(${esc(r.note)})</span>` : ""}</td><td>${k(r.value)}</td><td>${r.lo && r.hi ? `${k(r.lo)} - ${k(r.hi)}` : ""}</td></tr>`).join("");
+    const lad = bt.ladder ? bt.ladder.map(x => `<tr><td>${pct(x.f * 100, 0)} of asking</td><td>${k(d.L * x.f)}</td><td>${pct(x.beat, 0)}</td></tr>`).join("") : "";
+    const loanRows = d.loans.map(l => `<tr${l.fits ? "" : ' class="muted"'}><td>${esc(l.name)}${l.jumbo ? ' <span class="pill warn">jumbo</span>' : ""}</td><td>${k(l.cash)}</td><td>${money(l.monthly)}</td>
+      <td>${l.fits ? '<span class="pill">Fits</span>' : `<span class="pill warn">${l.why}</span>`}</td></tr>`).join("");
+    const th = (s.taxHistory || []).slice(0, 6);
+
+    el.innerHTML = `<div class="row" style="justify-content:space-between"><h2>Deal check: ${esc(s.formattedAddress || "")}</h2><button type="button" class="link" id="dealClose">Close</button></div>
+      <div class="asof">Asking ${money(d.L)}${s.daysOnMarket != null ? ` &middot; listed ${s.daysOnMarket} days` : ""}${s.squareFootage ? ` &middot; ${s.squareFootage.toLocaleString()} sq ft` : ""}${s.yearBuilt ? ` &middot; built ${s.yearBuilt}` : ""}
+        ${s.url ? ` &middot; <a href="${esc(s.url)}" target="_blank" rel="noopener">listing</a>` : ""}${loadingFull ? " &middot; loading the full property record..." : ""}</div>
+      <p class="verdict"><b>${verdict}</b>${gapTxt ? ` Asking is ${gapTxt} the value estimate of ${k(d.F)}.` : ""}</p>
+      <div class="offer3">
+        <div><div class="k">Open at</div><div class="v">${k(d.opening)}</div><div class="note">${pct(d.opening / d.L * 100, 1)} of asking</div></div>
+        <div><div class="k">Expect to pay</div><div class="v">${k(d.offer)}</div><div class="note">what homes like this have been selling for</div></div>
+        <div><div class="k">Walk away above</div><div class="v">${k(d.walk)}</div><div class="note">${d.walk === d.maxPrice ? "your budget limit" : "value estimate + 3%"}</div></div>
+      </div>
+      ${d.overBudget ? `<p class="note"><span class="pill warn">Over budget</span> The likely price is more than you can afford (${k(d.maxPrice)}) with your current numbers.</p>` : ""}
+      <h3>What to do</h3><ul class="tight">${tips.map(t => `<li>${t}</li>`).join("")}</ul>
+
+      <details class="sub"><summary>How the offer was worked out, and how well it did on recent sales</summary>
+        <p class="note">${d.comp.n >= 8 ? `In the last 6 months, ${d.comp.n} homes in ${zip} sold for a typical ${pct(d.comp.stl * 100, 1)} of their asking price, after about ${Math.round(d.comp.dom)} days.` :
+          d.nonDisclosure ? `${esc(STATES[rec.state]?.name || rec.state)} doesn't make sale prices public, so there are few or no recent sale prices here. The offer uses Realtor.com's market data and the value estimates instead, and can't be tested on past sales.` :
+          "There weren't enough recent sales with prices here to measure how homes sell versus asking, so a typical 98% is assumed."}
+        ${bt.n >= 8 ? ` Replaying the rule on each of those ${bt.n} sales (using only the other sales): the "expect to pay" price was within 5% of the real price ${pct(bt.within5, 0)} of the time, missing by ${pct(bt.offerMiss, 1)} typically. ${bt.w > 0 ? `Here fair value helped, so it pulls the price ${Math.round(bt.w * 100)}% of the way (on a log scale) toward the value estimate.` : `Here the asking price predicted the sale price better than nearby sales did (typical miss ${pct(bt.listMiss, 1)} vs ${pct(bt.fairMiss, 1)}), so the price follows asking and the value estimate is used for the walk-away price and the verdict.`}` : ""}</p>
+        ${lad ? `<div class="table-wrap"><table><tr><th>If you offer</th><th>Price</th><th>Recent sales here that closed at or below that share of asking</th></tr>${lad}</table></div>
+          <p class="note">Read the last column as a rough chance your offer would have been the winning price, if it's the only thing that differs.</p>` : ""}
+        <h3>Value estimates</h3>
+        <div class="table-wrap"><table><tr><th>Source</th><th>Value</th><th>Range</th></tr>${readRows || `<tr><td colspan="3">None available</td></tr>`}</table></div>
+        ${d.comps.length ? `<details class="sub"><summary>The nearby sales used (${d.comps.length})</summary><div class="table-wrap"><table><tr><th>Address</th><th>Sold</th><th>When</th><th>Sq ft</th><th>Beds</th><th>Miles</th><th>In today's prices, scaled to this size</th></tr>
+          ${d.comps.map(c => `<tr><td>${esc(c.address || "")}</td><td>${k(c.sold)}</td><td>${c.date || ""}</td><td>${c.sqft ? c.sqft.toLocaleString() : ""}</td><td>${c.bedrooms ?? ""}</td><td>${c.dist.toFixed(1)}</td><td>${k(c.value)}</td></tr>`).join("")}</table></div>
+          <p class="note">Each sale is moved to today's prices with the zip's Zillow index and scaled for size (bigger homes cost less per square foot). Sales don't record condition, so a renovated and a dated house can differ a lot.</p></details>` : ""}
+      </details>
+
+      <details class="sub"><summary>History, taxes and land</summary>
+        <table>
+          ${s.listDate ? `<tr><td>Listed</td><td>${s.listDate}${s.daysOnMarket != null ? ` (${s.daysOnMarket} days${Number.isFinite(d.zipDom) ? `; typical here ${Math.round(d.zipDom)}` : ""})` : ""}</td></tr>` : ""}
+          ${s.lastSoldDate ? `<tr><td>Last sold</td><td>${s.lastSoldPrice ? money(s.lastSoldPrice) + " on " : ""}${s.lastSoldDate}</td></tr>` : ""}
+          ${d.lastIdx ? `<tr><td>That price grown with the zip's prices</td><td>${k(d.lastIdx)}</td></tr>` : ""}
+          ${d.taxNow ? `<tr><td>Property tax, seller's latest bill</td><td>${money(d.taxNow)}/yr</td></tr>` : ""}
+          <tr><td>Property tax at the expected price (${pct(o.taxRate, 2)} zip rate)</td><td>${money(d.taxAfter)}/yr</td></tr>
+          ${d.taxTrend != null ? `<tr><td>Yearly change in the tax bill</td><td>${signed(d.taxTrend)}</td></tr>` : ""}
+          ${d.landShare ? `<tr><td>Land share of the tax assessment</td><td>${pct(d.landShare * 100, 0)}</td></tr><tr><td>Land value at the value estimate</td><td>${k(d.landValue)}</td></tr>` : ""}
+          ${s.hoa ? `<tr><td>HOA</td><td>${money(s.hoa)}/mo</td></tr>` : ""}
+          <tr><td>Home insurance, state average at this price</td><td>${money(ins)}/yr</td></tr>
+          ${s.views7 ? `<tr><td>Realtor.com views / saves, last 7 days</td><td>${s.views7.toLocaleString()} / ${s.saves7 ?? 0}</td></tr>` : ""}
+        </table>
+        ${th.length ? `<div class="table-wrap"><table><tr><th>Tax year</th><th>Tax</th><th>Land</th><th>Building</th><th>Assessed</th></tr>${th.map(r => `<tr><td>${r[0]}</td><td>${money(r[1])}</td><td>${r[2] ? k(r[2]) : ""}</td><td>${r[3] ? k(r[3]) : ""}</td><td>${r[4] ? k(r[4]) : ""}</td></tr>`).join("")}</table></div>
+          <p class="note">Assessed values are set by the county and are often well below market value; the land share is the useful part. A high land share means most of the price is the lot, so the house itself matters less (and may be a teardown candidate).</p>` : ""}
+      </details>
+
+      <details class="sub"><summary>Condition, structure and risks</summary>
+        ${d.facts.length ? `<p class="note"><b>From the listing record:</b> ${d.facts.map(esc).join("; ")}.</p>` : ""}
+        ${d.build.length ? `<p class="note"><b>Built with / on:</b> ${d.build.join(", ")}.</p>` : ""}
+        ${d.good.length ? `<p class="note"><b>Updates mentioned:</b> ${d.good.join(", ")}. Ask for dates, permits and receipts.</p>` : ""}
+        ${d.bad.length ? `<p class="note"><b>Watch-outs mentioned:</b> ${d.bad.join(", ")}.</p>` : ""}
+        ${s.yearBuilt ? `<ul class="note tight">${ageFlags(s.yearBuilt).map(f => `<li>${f}</li>`).join("")}</ul>` : ""}
+        ${hz ? `<p class="note"><b>Natural hazards (FEMA, this zip):</b> ${hz.label || ""}${(hz.top || []).length ? `; highest: ${hz.top.slice(0, 3).map(([n, , lab]) => `${esc(n.toLowerCase())} (${(lab || "").toLowerCase()})`).join(", ")}` : ""}.
+          ${hz.loss_rate != null ? ` Expected damage averages about ${money(d.offer * hz.loss_rate / 100)} a year at this price.` : ""}</p>` : ""}
+        <p class="note">Roof age, wiring and the foundation's real condition only come from an inspection. Use the inspection period to get repair quotes before you commit.</p>
+      </details>
+
+      <details class="sub"><summary>Loan options at ${k(d.offer)}</summary>
+        <div class="table-wrap"><table><tr><th>Loan</th><th>Cash up front</th><th>Monthly</th><th>For you</th></tr>${loanRows}</table></div>
+        <ul class="note tight">${d.loans.map(l => `<li><b>${esc(l.name)}:</b> ${esc(l.note)}</li>`).join("")}</ul>
+        <p class="note">All at ${o.ratePct}% (${o.years}-year) except the 15-year. FHA and VA rates are often a little lower than conventional; compare written quotes from several lenders, and ask what paying points or a seller-paid buydown would do. Loans over ${k(Deal.LIMITS.conforming)} are "jumbo" in most counties (${Deal.LIMITS.year} limit) and usually need more down.</p>
+      </details>
+
+      <details class="sub"><summary>Step-by-step plan to closing</summary>
+        <div class="steps">${STEPS.map(([key, when, what]) => `<label class="note"><input type="checkbox" data-step="${key}" ${done[key] ? "checked" : ""}> <b>${when}:</b> ${what}</label>`).join("")}</div>
+        <p class="note">Ticks are saved in this browser.</p>
+      </details>
+      <p class="note">Estimates from public data, not an appraisal or advice from a licensed agent.</p>`;
+    $("#dealClose").onclick = () => { deal = null; renderDeal(o); };
+    el.querySelectorAll("[data-step]").forEach(c => c.onchange = () => { (steps[deal.id] = steps[deal.id] || {})[c.dataset.step] = c.checked; saveSteps(); });
+  }
+
   // ---------------------------------------------------------------- buyer's / seller's market
   function renderMarket() {
     const m = rec.market;
     if (!m) { $("#s-market").innerHTML = ""; return; }
     const y = m.year_ago || {};
+    hint("h-market", `${m.label || "n/a"}${m.dom ? `, about ${Math.round(m.dom)} days to sell` : ""}`);
     const line = (lab, key, fmt) => m[key] == null ? "" : `<tr><td>${lab}</td><td>${fmt(m[key])}</td><td>${y[key] == null ? "" : fmt(y[key])}</td></tr>`;
     $("#s-market").innerHTML = `<h2>Buyer's or seller's market: ${m.label || "n/a"}</h2>
       <div class="asof">${NAT.asof.market_source || "Redfin"}, ${m.month}${y.label ? `. A year earlier it was: ${y.label.toLowerCase()}` : ""}</div>
@@ -849,6 +1067,7 @@
     const h = rec.hazard, yb = rec.acs?.year_built;
     if (!h && !yb) { $("#s-hazards").innerHTML = ""; return; }
     const tp = targetPrice(o);
+    hint("h-risk", h ? `${h.label || ""}${(h.top || []).length ? ": " + h.top.slice(0, 2).map(([n]) => esc(n.toLowerCase())).join(", ") : ""}` : yb ? `homes typically built ${yb}` : "");
     const flood = (h?.top || []).some(([n, , lab]) => /flood/i.test(n) && /high/i.test(lab || ""));
     $("#s-hazards").innerHTML = `<h2>Natural hazards and the building</h2>
       ${h ? `<div class="asof">FEMA National Risk Index for the neighbourhoods in this zip</div>
@@ -974,7 +1193,8 @@
       <div class="listings">${items.map(h => {
         const v = vaastuScore(h), f = fengShui(h), r = h.rooms || {};
         return `<div class="listing">
-          <div class="price">${h.price ? money(h.price) : ""} <button type="button" class="link" data-unlist="${esc(h.id)}">Remove</button></div>
+          <div class="price">${h.price ? money(h.price) : ""} <button type="button" class="link" data-unlist="${esc(h.id)}">Remove</button>
+            ${h.address ? `<button type="button" class="link" data-sdeal="${esc(h.id)}">Deal check</button>` : ""}</div>
           <div>${esc(h.address || "")}</div>
           <div class="note">${h.url ? `<a href="${esc(h.url)}" target="_blank" rel="noopener">Listing</a> &middot; ` : ""}${h.lat ? `<a href="https://www.google.com/maps/@${h.lat},${h.lon},60m/data=!3m1!1e3" target="_blank" rel="noopener">Satellite view</a>` : ""}</div>
           <p style="margin:6px 0">Vaastu ${scorePill(v?.pct)} <span class="note">(${v ? v.checks : 0} of 8 checks)</span> &middot; Feng Shui ${scorePill(f.pct)} <span class="note">(${f.concerns.length} concern${f.concerns.length === 1 ? "" : "s"})</span></p>
@@ -1001,6 +1221,13 @@
       saveShortlist(); renderShortlist();
     });
     el.querySelectorAll("[data-slfs]").forEach(c => c.onchange = () => { shortlist[c.dataset.slfs].fs[c.dataset.key] = c.checked; saveShortlist(); renderShortlist(); });
+    el.querySelectorAll("[data-sdeal]").forEach(b => b.onclick = async () => {
+      const h = shortlist[b.dataset.sdeal];
+      if (h.zip && h.zip !== zip) { $("#zip").value = h.zip; await lookup(); }
+      const s = (listing?.sale || []).find(x => (x.id || x.formattedAddress) === h.id) ||
+        { id: h.id, formattedAddress: h.address, price: h.price, url: h.url, latitude: h.lat, longitude: h.lon };
+      openDeal(s);
+    });
     el.querySelectorAll("[data-unlist]").forEach(b => b.onclick = () => { delete shortlist[b.dataset.unlist]; saveShortlist(); renderShortlist(); if (rec) renderListings(inputs()); });
   }
 
@@ -1045,14 +1272,16 @@
     const sc = rec.schools, nces = `https://nces.ed.gov/ccd/schoolsearch/school_list.asp?Search=1&Zip=${zip}&Miles=5`;
     if (!sc) { $("#s-schools").innerHTML = `<h2>Schools</h2><p class="note">No school data for this zip. <a href="${nces}" target="_blank" rel="noopener">Public schools within 5 miles (NCES)</a>.</p>`; return; }
     const d = sc.district;
-    const gradeTag = g => !g ? "" : `<span class="${["A", "B"].includes(g) ? "pill" : "pill warn"}">${g}</span>`;
+    const gradeTag = g => !g ? "" : `<span class="${g >= 6 ? "pill" : "pill warn"}">${g}/10</span>`;
+    hint("h-schools", d ? `${esc(d.name)}: ${d.n10 ?? "?"}/10 nationally${d.s10 ? `, ${d.s10}/10 in ${esc(rec.state)}` : ""}` : "");
     $("#s-schools").innerHTML = `<h2>Schools</h2>
-      ${d ? `<p class="verdict">School district: <b>${esc(d.name)}</b> ${gradeTag(d.grade)} <span class="note">test scores higher than ${Math.round(d.pct)}% of US districts${d.year ? ` (${d.year})` : ""}</span></p>` : ""}
-      <div class="table-wrap"><table><tr><th>Nearest public schools</th><th>Level</th><th>Miles</th><th>Students</th><th>Per teacher</th><th>Math</th><th>Reading</th><th>District grade</th></tr>
+      ${d ? `<p class="verdict">School district: <b>${esc(d.name)}</b> ${gradeTag(d.n10)} nationally${d.s10 ? `, ${gradeTag(d.s10)} within ${esc(rec.state)}` : ""}
+        <span class="note">test scores higher than ${Math.round(d.pct)}% of US districts${d.spct != null ? ` and ${Math.round(d.spct)}% of ${esc(rec.state)} districts` : ""}${d.year ? ` (${d.year})` : ""}</span></p>` : ""}
+      <div class="table-wrap"><table><tr><th>Nearest public schools</th><th>Level</th><th>Miles</th><th>Students</th><th>Per teacher</th><th>Math</th><th>Reading</th><th>District score</th></tr>
         ${sc.list.map(x => `<tr><td>${esc(x.name || "")}${x.charter ? " <span class=\"note\">(charter)</span>" : ""}</td><td>${x.level || ""}</td><td>${x.mi}</td>
-          <td>${x.enroll ?? ""}</td><td>${x.ratio ?? ""}</td><td>${x.math != null ? pct(x.math, 0) : ""}</td><td>${x.read != null ? pct(x.read, 0) : ""}</td><td>${gradeTag(x.dgrade)}</td></tr>`).join("")}
+          <td>${x.enroll ?? ""}</td><td>${x.ratio ?? ""}</td><td>${x.math != null ? pct(x.math, 0) : ""}</td><td>${x.read != null ? pct(x.read, 0) : ""}</td><td>${gradeTag(x.d10)}</td></tr>`).join("")}
       </table></div>
-      <p class="note">District grade: A = top 20% of US school districts on Stanford's nationally comparable test scores (SEDA 2025.1), B = next 20%, down to F = bottom 20%. Math and reading are the share of students proficient on their state's test in 2018-19, the last full national release; states use different tests, so compare those only within a state. Attendance zones aren't in this data, so check which schools a specific address is assigned to with the district. More: <a href="${nces}" target="_blank" rel="noopener">NCES school search</a>.</p>`;
+      <p class="note">District score: where the district's average test scores rank among US districts on Stanford's nationally comparable scale (SEDA 2025.1), in tenths: 10/10 = top 10%, 1/10 = bottom 10%. The in-state score ranks it against the state's own districts. Sites like GreatSchools also weigh student progress and gaps between groups and rate each school against its state, so their 1-10 ratings can be a few points higher or lower. Math and reading are the share of students proficient on their state's test in 2018-19, the last full national release; states use different tests, so compare those only within a state. Attendance zones aren't in this data, so check which schools a specific address is assigned to with the district. More: <a href="${nces}" target="_blank" rel="noopener">NCES school search</a>.</p>`;
   }
 
 

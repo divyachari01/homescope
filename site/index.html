@@ -86,18 +86,20 @@
   <main id="results" hidden>
     <section id="s-head"></section>
     <section id="s-summary" class="cards"></section>
+    <section id="s-deal"></section>
+    <section id="s-find"></section>
     <section id="s-listings"></section>
     <section id="s-shortlist"></section>
-    <section id="s-sun"></section>
-    <section id="s-market"></section>
-    <section id="s-prices"></section>
-    <section id="s-buying"></section>
-    <section id="s-timing"></section>
-    <section id="s-purpose"></section>
-    <section id="s-hood"></section>
-    <section id="s-hazards"></section>
-    <section id="s-law"></section>
-    <section id="s-schools"></section>
+    <h2 class="more-h">More about this zip <span class="muted">(tap to open)</span></h2>
+    <details class="group" id="g-cost"><summary>Monthly cost, loans and rates<span class="hint" id="h-cost"></span></summary><section id="s-buying"></section></details>
+    <details class="group" id="g-future"><summary>Prices, forecast and best time to buy<span class="hint" id="h-future"></span></summary><section id="s-timing"></section><section id="s-prices"></section></details>
+    <details class="group" id="g-market"><summary>Buyer's or seller's market<span class="hint" id="h-market"></span></summary><section id="s-market"></section></details>
+    <details class="group" id="g-purpose"><summary>Your plan: live, rent out or Airbnb<span class="hint" id="h-purpose"></span></summary><section id="s-purpose"></section></details>
+    <details class="group" id="g-hood"><summary>Neighbourhood, jobs and people<span class="hint" id="h-hood"></span></summary><section id="s-more" class="cards"></section><section id="s-hood"></section></details>
+    <details class="group" id="g-schools"><summary>Schools<span class="hint" id="h-schools"></span></summary><section id="s-schools"></section></details>
+    <details class="group" id="g-risk"><summary>Natural hazards and building age<span class="hint" id="h-risk"></span></summary><section id="s-hazards"></section></details>
+    <details class="group" id="g-law"><summary>Landlord-tenant law and politics<span class="hint" id="h-law"></span></summary><section id="s-law"></section></details>
+    <details class="group" id="g-sun"><summary>Sun path<span class="hint" id="h-sun"></span></summary><section id="s-sun"></section></details>
   </main>
 
   <footer id="sources" class="foot"></footer>
@@ -107,6 +109,7 @@
 <script src="vendor/chart.umd.min.js"></script>
 <script src="config.js"></script>
 <script src="calc.js"></script>
+<script src="deal.js"></script>
 <script src="orient.js"></script>
 <script src="app.js"></script>
 </body>
