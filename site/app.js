@@ -20,7 +20,7 @@
   };
 
   let NAT = null, STATES = {}, LISTED = [];
-  let rec = null, zip = "", target = { type: "all", custom: null }, listing = null, listFilter = "All", listSort = "best", onlyAfford = true, vaastuOnly = false;
+  let rec = null, zip = "", target = { type: "all", custom: null }, listing = null;
   const charts = {};
 
   // ---------------------------------------------------------------- formatting
@@ -114,15 +114,15 @@
       liveCache.set(z, j); liveState.delete(z);
       j.mapState = "loading";
       if (z === zip) { listing = j; renderAll(); }
-      cityHomesChanged(z);
+      homesChanged(z);
       // then add facing, walkable places and noise from the street map, right here in the browser
       try { await Orient.addTo(j.sale); j.mapState = "done"; } catch (e) { j.mapState = "failed"; }
       if (z === zip) renderListings(inputs());
-      cityHomesChanged(z);
+      homesChanged(z);
     } catch (e) {
       liveState.set(z, "failed");
       if (z === zip) renderListings(inputs());
-      cityHomesChanged(z);
+      homesChanged(z);
     }
   }
 
@@ -148,40 +148,49 @@
     }
     $("#rateHint").textContent = `(blank = ${NAT.rate30_latest.value}% from ${NAT.rate30_latest.date})`;
     renderSources();
-    const q = new URLSearchParams(location.search).get("zip") || new URLSearchParams(location.search).get("city");
+    const P = new URLSearchParams(location.search), q = P.get("zip") || P.get("city");
+    updateBudget();
+    if (P.get("zip") && P.get("view") === "area") { $("#zip").value = P.get("zip"); openReport(P.get("zip")); return; }
     let last = null;
-    try { last = localStorage.getItem("hc-zip"); } catch (e) { /* ignore */ }
+    try { last = localStorage.getItem("hc-search"); } catch (e) { /* ignore */ }
     if (q || last) { $("#zip").value = q || last; lookup(); }
   }
 
+  // One search box: a zip, a city or county, or a house (street address or listing link).
   async function lookup() {
     const q = $("#zip").value.trim();
-    if (!/^\d{5}$/.test(q)) { if (q.length >= 2) return citySearch(q); $("#status").textContent = "Enter a city or a 5-digit zip code."; return; }
-    zip = q;
-    $("#s-city").hidden = true;
+    if (/^\d{5}$/.test(q)) return zipSearch(q);
+    if (/^https?:\/\//i.test(q) || /^\d+[a-z]?\s+\S+/i.test(q)) return houseSearch(q);
+    if (q.length >= 2) return citySearch(q);
+    $("#status").textContent = "Type a city, zip code, address or listing link.";
+  }
+  // The full area report for one zip.
+  async function openReport(z) {
+    zip = z;
     $("#status").textContent = "Loading...";
     try {
       const shard = await getShard(zip.slice(0, 3));
       rec = shard[zip];
     } catch (e) { rec = null; }
     if (!rec) { $("#results").hidden = true; $("#status").textContent = `No data for ${zip}. It may be a PO box or business-only zip.`; return; }
+    $("#v-homes").hidden = true;
     // Live listings when available (they include recent sales); the daily copy shows meanwhile.
     listing = liveCache.get(zip) || (LISTED.includes(zip) ? await getJSON(`data/listings/${zip}.json`).catch(() => null) : null);
     if (!liveCache.has(zip) && API) loadLive(zip);
     try { localStorage.setItem("hc-zip", zip); } catch (e) { /* ignore */ }
-    history.replaceState(null, "", `?zip=${zip}`);
-    if (deal && deal.zip !== zip) deal = null;
+    history.replaceState(null, "", `?zip=${zip}&view=area`);
     target = { type: rec.zhvi_now?.all ? "all" : "custom", custom: rec.zhvi_now?.all ? null : rec.acs?.home_value || 300000 };
     $("#status").textContent = "";
     $("#results").hidden = false;
     renderAll();
+    window.scrollTo(0, 0);
   }
 
   // Yearly dollar price history. FHFA's index goes back to 1975 but has no dollar level, so it is
   // scaled to match Zillow's value in the latest year both have, then Zillow continues after that.
-  function priceHistory() {
+  function priceHistory(r = rec) {
     const toMap = s => { const m = new Map(); if (s) s.v.forEach((v, i) => { if (v != null) m.set(s.start + i, v); }); return m; };
-    const z = toMap(rec.zhvi && (rec.zhvi.sfr || rec.zhvi.all)), h = toMap(rec.hpi);
+    const z = toMap(r.zhvi && (r.zhvi.sfr || r.zhvi.all)), h = toMap(r.hpi);
     const out = new Map();
     const overlap = [...h.keys()].filter(y => z.has(y));
     if (overlap.length) {
@@ -241,8 +250,6 @@
     const o = inputs();
     renderHead(o);
     renderSummary(o);
-    renderFind();
-    renderDeal(o);
     renderMarket();
     renderPrices();
     renderBuying(o);
@@ -253,8 +260,6 @@
     renderGrowth();
     renderLaw();
     renderSun();
-    renderListings(o);
-    renderShortlist();
     renderSchools();
   }
 
@@ -735,152 +740,10 @@
 
   // ---------------------------------------------------------------- listings
   function median(a) { return Calc.percentile(a, 50); }
-  function repoEditLink(file) {
-    const h = location.hostname;
-    if (!h.endsWith(".github.io")) return null;
-    const user = h.split(".")[0], repo = location.pathname.split("/")[1] || `${user}.github.io`;
-    return `https://github.com/${user}/${repo}/edit/main/${file}`;
-  }
+
   const WALK = [["grocery", "grocery / convenience store"], ["park", "park"], ["transit", "bus/train stop"], ["pharmacy", "pharmacy"], ["food", "cafe or restaurant"], ["school", "school"]];
-  function walkLine(near) {
-    if (!near) return "";
-    const have = WALK.filter(([key]) => near[key]?.n > 0);
-    return `<div class="note">10-min walk: ${have.length} of 6 (${have.map(([, l]) => l).join(", ") || "none"})</div>`;
-  }
-  function noiseLine(nz) {
-    if (!nz) return "";
-    const f = [];
-    if (nz.highway_m != null && nz.highway_m < 300) f.push(`highway ${nz.highway_m} m away`);
-    if (nz.rail_m != null && nz.rail_m < 250) f.push(`railway ${nz.rail_m} m away`);
-    if (nz.airport_km != null && nz.airport_km < 5) f.push(`${esc(nz.airport || "airport")} ${nz.airport_km} km away`);
-    return f.length ? `<div class="note"><b>Noise:</b> ${f.join(", ")}</div>` : `<div class="note">No highway, railway or major airport close by</div>`;
-  }
-  function facingRating(f) {
-    if (!f) return null;
-    if (["N", "E", "NE"].includes(f)) return ["good", "Vaastu-favoured facing"];
-    if (f === "SW") return ["poor", "Least favoured facing in Vaastu"];
-    if (["S", "SE"].includes(f)) return ["mixed", "Not ideal in Vaastu"];
-    return ["ok", "Acceptable in Vaastu"];
-  }
-  function renderListings(o) {
-    const el = $("#s-listings");
-    if (!listing && API && liveState.get(zip) === "loading") {
-      el.innerHTML = `<h2>Homes for sale in ${zip}</h2><p class="note">Pulling live listings for ${zip}... this takes 5-30 seconds the first time and is instant after that.</p>`;
-      return;
-    }
-    if (!listing && API && liveState.get(zip) === "failed") {
-      el.innerHTML = `<h2>Homes for sale in ${zip}</h2><p class="note">Live listings didn't load (the listings source may be busy). <button type="button" class="link" id="retryLive">Try again</button> or <a href="https://www.realtor.com/realestateandhomes-search/${zip}" target="_blank" rel="noopener">browse ${zip} on Realtor.com</a>.</p>`;
-      $("#retryLive").onclick = () => { liveState.delete(zip); loadLive(zip); renderListings(inputs()); };
-      return;
-    }
-    if (!listing) {
-      const edit = repoEditLink("watchlist.txt");
-      el.innerHTML = `<h2>Homes for sale</h2><p class="note">Live listings are pulled daily for the zips in your watchlist (up to 30).
-        ${edit ? `<a href="${edit}" target="_blank" rel="noopener">Add ${zip} to the watchlist</a> (put it on its own line and commit); it shows up after the next daily build.` : `To add ${zip}, put it on its own line in <code>watchlist.txt</code>.`}
-        Meanwhile: <a href="https://www.zillow.com/homes/${zip}_rb/" target="_blank" rel="noopener">browse ${zip} on Zillow</a>.</p>`;
-      return;
-    }
-    const mode = $("#purpose").value, investor = mode === "rent" || mode === "str";
-    const sale = listing.sale || [], rentals = listing.rent || [];
-    const rentByBeds = {};
-    rentals.forEach(r => { if (r.price && r.bedrooms != null) (rentByBeds[r.bedrooms] = rentByBeds[r.bedrooms] || []).push(r.price); });
-    const prices = sale.map(s => s.price).filter(Boolean);
-    const t1 = Calc.percentile(prices, 33.3), t2 = Calc.percentile(prices, 66.7);
-    const all = sale.filter(s => s.price).map(s => {
-      const group = LISTING_GROUPS[s.propertyType] || s.propertyType || "Other";
-      const tier = s.price <= t1 ? "Lower third" : s.price <= t2 ? "Middle third" : "Upper third";
-      const oo = { ...o, hoa: s.hoa || o.hoa };
-      const pay = Calc.monthly(s.price, oo).total;
-      const estRent = rentByBeds[s.bedrooms]?.length >= 3 ? median(rentByBeds[s.bedrooms]) : typicalRent();
-      const inv = estRent ? Calc.rental(s.price, estRent, investorOpts(oo)) : null;
-      const fits = investor ? s.price * (o.invDown + o.closingPct) / 100 <= o.cash : s.price <= Calc.maxPrice(oo).price;
-      const f = s.orient?.facing, vr = facingRating(f);
-      const vs = vaastuScore({ facing: f, tjunction: s.orient ? !!s.orient.tjunction : undefined });
-      const vScore = vs ? vs.pct : -1;
-      return { s, group, tier, pay, estRent, inv, fits, f, vr, vs, vScore };
-    });
-    // overall score for the homes you can afford
-    const fitRows = all.filter(r => r.fits);
-    const spaceR = rankPct(fitRows.map(r => r.s.squareFootage)), valueR = rankPct(fitRows.map(r => r.s.estimate && r.s.price ? r.s.estimate / r.s.price : NaN));
-    for (const r of all) {
-      if (!r.fits) { r.score = null; continue; }
-      const near = r.s.near, nz = r.s.noise, mins = work && r.s.latitude ? drive.get(keyOf(r.s.latitude, r.s.longitude)) : null;
-      r.parts = {
-        space: spaceR(r.s.squareFootage), value: valueR(r.s.estimate && r.s.price ? r.s.estimate / r.s.price : NaN),
-        shop: near?.grocery?.m != null ? clamp100(100 - (near.grocery.m - 300) / 17) : null,
-        walk: near ? Math.round(WALK.filter(([kk]) => near[kk]?.n > 0).length / WALK.length * 100) : null,
-        commute: mins != null && mins >= 0 ? clamp100(100 - (mins - 10) * 2) : null,
-        quiet: nz ? clamp100(100 - (nz.highway_m != null && nz.highway_m < 300 ? 40 : 0) - (nz.rail_m != null && nz.rail_m < 250 ? 30 : 0) - (nz.airport_km != null && nz.airport_km < 5 ? 30 : 0)) : null,
-        vaastu: r.vs ? r.vs.pct : null };
-      r.score = blend(r.parts, lOn);
-    }
-    const groups = ["All", ...new Set(all.map(r => r.group))];
-    const rows = all.filter(r => (listFilter === "All" || r.group === listFilter) && (!onlyAfford || r.fits)
-      && (!vaastuOnly || (r.vr && r.vr[0] === "good"))
-      && (!maxDrive || !work || (drive.get(keyOf(r.s.latitude, r.s.longitude)) ?? 1e9) <= maxDrive));
-    const sorters = { best: (a, b) => (b.fits - a.fits) || ((b.score ?? -1) - (a.score ?? -1)) || a.s.price - b.s.price, price: (a, b) => a.s.price - b.s.price, cash: (a, b) => (b.inv?.cashFlow ?? -1e9) - (a.inv?.cashFlow ?? -1e9),
-      fit: (a, b) => (b.fits - a.fits) || a.s.price - b.s.price, newest: (a, b) => (a.s.daysOnMarket ?? 1e9) - (b.s.daysOnMarket ?? 1e9),
-      vaastu: (a, b) => (b.fits - a.fits) || (b.vScore - a.vScore) || a.s.price - b.s.price };
-    rows.sort(sorters[listSort] || sorters.best);
-    const nFit = all.filter(r => r.fits).length, nOriented = all.filter(r => r.f).length;
-    const beds = Object.keys(rentByBeds).sort((a, b) => a - b).map(b => `<tr><td>${b == 0 ? "Studio" : b + " bed"}</td><td>${rentByBeds[b].length}</td><td>${money(median(rentByBeds[b]))}</td></tr>`).join("");
-    const tag = v => v === "good" ? "pill" : v === "ok" ? "pill" : "pill warn";
-    el.innerHTML = `
-      <h2>Homes for sale you can buy in ${zip}</h2>
-      <div class="asof">${listing.source || "RentCast"}, fetched ${listing.fetched}: ${sale.length} for sale, ${rentals.length} for rent. ${listing.mapState === "loading" ? "Reading the street map for facing, walkability and noise..." : listing.mapState === "failed" ? "The street-map service didn't respond, so facing, walkability and noise are missing for now." : `Facing directions estimated for ${nOriented} homes from OpenStreetMap streets.`}</div>
-      <p class="verdict"><b>${nFit}</b> of ${all.length} homes fit ${investor ? `your cash at ${o.invDown}% down` : "your income, savings and down payment"}.</p>
-      <p class="note">Score (0-100) averages what you pick below, compared with the other homes in your budget.</p>
-      <div class="row">
-        <label class="note"><input type="checkbox" id="onlyAfford" ${onlyAfford ? "checked" : ""}> Only homes I can afford</label>
-        <label class="note"><input type="checkbox" id="vaastuOnly" ${vaastuOnly ? "checked" : ""}> Only Vaastu-favoured facing (north, east, north-east)</label>
-        ${work ? `<label class="note">Drive to work <select id="maxDrive">${[[0, "any"], [15, "15 min or less"], [30, "30 min or less"], [45, "45 min or less"]].map(([v, l]) => `<option value="${v}" ${v === maxDrive ? "selected" : ""}>${l}</option>`).join("")}</select></label>` : `<span class="note">Add a work address under Your numbers to see drive times.</span>`}
-      </div>
-      ${factorChips(LFACT, lOn, "lfact")}
-      <div class="chips" id="chips">${groups.map(g => `<button type="button" class="${g === listFilter ? "on" : ""}" data-g="${esc(g)}">${esc(g)}</button>`).join("")}</div>
-      <div class="row"><label class="note">Sort <select id="listSort">
-        ${[["best", "Best overall (in budget)"], ["fit", "Cheapest in budget"], ["vaastu", "Budget, then Vaastu score"], ["price", "Price"], ["cash", "Rental cash flow"], ["newest", "Newest"]].map(([v, l]) => `<option value="${v}" ${v === listSort ? "selected" : ""}>${l}</option>`).join("")}
-      </select></label></div>
-      ${rows.length ? "" : `<p class="note">No homes match these filters right now.</p>`}
-      <div class="listings">${rows.slice(0, 60).map(r => `<div class="listing">
-        ${r.s.photo && r.s.url ? `<a href="${esc(r.s.url)}" target="_blank" rel="noopener" class="photo"><img src="${esc(r.s.photo)}" alt="Listing photo" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.remove()"><span>Photo: Realtor.com &middot; open listing</span></a>` : ""}
-        <div class="price">${money(r.s.price)} ${r.fits ? `<span class="pill">${investor ? "Within your cash" : "In budget"}</span>` : ""} ${r.score != null ? `<span class="pill">Score ${r.score}</span>` : ""}</div>
-        ${r.score != null && strong(r.parts, lOn, LFACT).length ? `<div class="note">Strong on: ${strong(r.parts, lOn, LFACT).join(", ")}</div>` : ""}
-        <div>${esc(r.s.formattedAddress || "")}</div>
-        <div class="note">${esc(r.group)} &middot; ${r.tier}${r.s.squareFootage >= 5000 ? " &middot; Large (5,000+ sq ft)" : ""}</div>
-        <div class="note">${r.s.bedrooms ?? "?"} bd &middot; ${r.s.bathrooms ?? "?"} ba${r.s.squareFootage ? ` &middot; ${r.s.squareFootage.toLocaleString()} sq ft` : ""}${r.s.yearBuilt ? ` &middot; built ${r.s.yearBuilt}` : ""}${r.s.daysOnMarket != null ? ` &middot; ${r.s.daysOnMarket} days listed` : ""}</div>
-        <div>Owner cost ${money(r.pay)}/mo${r.s.hoa ? ` (incl. HOA ${money(r.s.hoa)})` : ""}</div>
-        ${work && r.s.latitude ? `<div><b>${driveText(r.s.latitude, r.s.longitude) || "Drive time loading..."}</b></div>` : ""}
-        ${walkLine(r.s.near)}${noiseLine(r.s.noise)}
-        ${investor && r.inv ? `<div class="note">If rented at ~${money(r.estRent)}: cash flow ${money(r.inv.cashFlow)}/mo, cap rate ${pct(r.inv.capRate, 1)}</div>` : ""}
-        ${r.f ? `<div style="margin-top:4px">Faces <b>${DIR_NAMES[r.f]}</b>${r.s.orient.street ? ` onto ${esc(r.s.orient.street)}` : ""}. Vaastu ${scorePill(r.vs?.pct)} <span class="note">(from ${r.vs?.checks || 0} of 8 checks)</span></div>
-          <div class="note">${r.vr[1]}. ${FACING_LIGHT[r.f]}${r.s.orient.tjunction ? " <b>Feng Shui:</b> a street ends pointing at this house (T-junction)." : ""}${r.s.orient.corner ? " Corner lot." : ""}</div>` : ""}
-        ${r.s.latitude ? `<div class="note">${r.s.url ? `<a href="${esc(r.s.url)}" target="_blank" rel="noopener">Listing</a> &middot; ` : ""}<a href="https://www.google.com/maps/@${r.s.latitude},${r.s.longitude},60m/data=!3m1!1e3" target="_blank" rel="noopener">Satellite view</a></div>` : ""}
-        <div class="row"><button type="button" data-deal="${esc(r.s.id || r.s.formattedAddress)}">Deal check: what to offer</button></div>
-        <button type="button" class="link" data-short="${esc(r.s.id || r.s.formattedAddress)}">${shortlist[r.s.id || r.s.formattedAddress] ? "&#9733; Shortlisted (tap to remove)" : "&#9734; Shortlist for full Vaastu check"}</button>
-      </div>`).join("")}</div>
-      ${rows.length > 60 ? `<p class="note">Showing 60 of ${rows.length}.</p>` : ""}
-      <p class="note">Facing = direction to the nearest street; check corner lots on the satellite view. Shortlist a home to add its rooms for the full Vaastu score.</p>
-      ${beds ? `<h3>Rentals listed now</h3><table><tr><th>Size</th><th>Listings</th><th>Median rent</th></tr>${beds}</table>` : ""}`;
-    el.querySelectorAll("#chips button").forEach(b => b.onclick = () => { listFilter = b.dataset.g; renderListings(inputs()); });
-    el.querySelectorAll("#lfact [data-f]").forEach(b => b.onclick = () => { const f = b.dataset.f; lOn.has(f) ? lOn.delete(f) : lOn.add(f); saveSet("hc-lfact", lOn); renderListings(inputs()); });
-    $("#listSort").onchange = e => { listSort = e.target.value; renderListings(inputs()); };
-    $("#onlyAfford").onchange = e => { onlyAfford = e.target.checked; renderListings(inputs()); };
-    $("#vaastuOnly").onchange = e => { vaastuOnly = e.target.checked; renderListings(inputs()); };
-    if ($("#maxDrive")) $("#maxDrive").onchange = e => { maxDrive = +e.target.value; renderListings(inputs()); };
-    if (work) {
-      const pts = sale.filter(x => x.latitude).map(x => [x.latitude, x.longitude]);
-      fetchDrives(pts).then(changed => { if (changed && listing && listing.zip === zip) renderListings(inputs()); });
-    }
-    el.querySelectorAll("[data-deal]").forEach(b => b.onclick = () => {
-      const s = sale.find(x => (x.id || x.formattedAddress) === b.dataset.deal);
-      if (s) openDeal(s);
-    });
-    el.querySelectorAll("[data-short]").forEach(b => b.onclick = () => {
-      const s = sale.find(x => (x.id || x.formattedAddress) === b.dataset.short);
-      if (s) toggleShortlist(s);
-      renderListings(inputs()); renderShortlist();
-    });
-  }
+
+
 
   // ---------------------------------------------------------------- deal check for one house
   let deal = null;                               // { id, zip, base: listing row, full: property record, state }
@@ -900,33 +763,10 @@
     if (m) return `${m[3].replace(/-/g, " ").replace(/ (\d{5})$/, ", $1")}, ${m[2].replace(/-/g, " ")}, ${m[1]}`.replace(/, (\d{5}), (.+), ([A-Z]{2})$/, ", $2, $3 $1");
     return t;
   }
-  function renderFind() {
-    if (!API) { $("#s-find").innerHTML = ""; return; }
-    if ($("#findForm")) return;                       // keep what's typed
-    $("#s-find").innerHTML = `<h2>Check a house you found</h2>
-      <p class="note">Paste an address or a Realtor.com, Zillow or Redfin link to see what to offer.</p>
-      <form class="find" id="findForm"><input id="findAddr" type="text" placeholder="e.g. 123 Main St, Columbus, OH 43201" aria-label="House address or link"><button type="submit">Deal check</button></form>
-      <div class="note" id="findStatus"></div>`;
-    $("#findForm").onsubmit = async e => {
-      e.preventDefault();
-      const a = addressFrom($("#findAddr").value);
-      if (a.length < 6) return;
-      $("#findStatus").textContent = "Looking up the house...";
-      try {
-        const r = await fetch(`${API}/api/listings?address=${encodeURIComponent(a)}&v=2`), j = await r.json();
-        if (!r.ok || !j.home) throw new Error(j.error || "not found");
-        fullCache.set(j.home.id, j.home);
-        deal = { id: j.home.id, zip: j.home.zip, base: j.home };
-        if (j.home.zip && j.home.zip !== zip) { $("#zip").value = j.home.zip; await lookup(); }
-        else renderAll();
-        $("#s-deal").scrollIntoView({ behavior: "smooth", block: "start" });
-      } catch (err) { $("#findStatus").textContent = "Couldn't find that house. Try the full street address with city, state and zip."; }
-    };
-  }
   async function openDeal(s) {
     deal = { id: s.id || s.formattedAddress, zip, base: s };
     renderDeal(inputs());
-    $("#s-deal").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("#dealModal").scrollTop = 0;
     if (!fullCache.has(deal.id) && API && s.formattedAddress) {
       try {
         const r = await fetch(`${API}/api/listings?address=${encodeURIComponent(s.formattedAddress)}&v=2`), j = await r.json();
@@ -938,6 +778,8 @@
 
   function renderDeal(o) {
     const el = $("#s-deal");
+    $("#dealModal").hidden = !(deal && deal.zip === zip);
+    document.body.classList.toggle("noscroll", !$("#dealModal").hidden);
     if (!deal || deal.zip !== zip) { el.innerHTML = ""; return; }
     const loadingFull = API && !fullCache.has(deal.id);
     const s = { ...deal.base, ...(fullCache.get(deal.id) || {}) };
@@ -1156,11 +998,6 @@
 
   // ---------------------------------------------------------------- sun path, Vaastu and Feng Shui
   const DIRS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-  const FACING_LIGHT = {
-    N: "The front gets little direct sun; the back gets the most.", S: "The front gets sun most of the day, strongest in winter.",
-    E: "The front gets morning sun; the back gets the afternoon.", W: "The front gets afternoon and evening sun, which is hot in summer.",
-    NE: "The front gets early morning sun only.", NW: "The front gets late-evening sun in summer.", SE: "The front gets morning and midday sun.", SW: "The front gets the hot afternoon sun.",
-  };
   const DIR_NAMES = { N: "North", NE: "North-east", E: "East", SE: "South-east", S: "South", SW: "South-west", W: "West", NW: "North-west" };
   // ---------------------------------------------------------------- Vaastu and Feng Shui scoring
   // Points for each Vaastu check (traditional guidance). The score is points earned out of the
@@ -1211,7 +1048,6 @@
   let work = null;
   try { work = JSON.parse(localStorage.getItem("hc-work") || "null"); } catch (e) { /* ignore */ }
   const drive = new Map();                       // "lat,lon" -> minutes (null while unknown)
-  let maxDrive = 0;
   const keyOf = (lat, lon) => `${(+lat).toFixed(5)},${(+lon).toFixed(5)}`;
   async function setWork(q) {
     $("#workStatus").textContent = "Looking up the address...";
@@ -1297,10 +1133,9 @@
     el.querySelectorAll("[data-slfs]").forEach(c => c.onchange = () => { shortlist[c.dataset.slfs].fs[c.dataset.key] = c.checked; saveShortlist(); renderShortlist(); });
     el.querySelectorAll("[data-sdeal]").forEach(b => b.onclick = async () => {
       const h = shortlist[b.dataset.sdeal];
-      if (h.zip && h.zip !== zip) { $("#zip").value = h.zip; await lookup(); }
-      const s = (listing?.sale || []).find(x => (x.id || x.formattedAddress) === h.id) ||
+      const s = (liveCache.get(h.zip)?.sale || []).find(x => (x.id || x.formattedAddress) === h.id) ||
         { id: h.id, formattedAddress: h.address, price: h.price, url: h.url, latitude: h.lat, longitude: h.lon };
-      openDeal(s);
+      openHome(s, h.zip);
     });
     el.querySelectorAll("[data-unlist]").forEach(b => b.onclick = () => { delete shortlist[b.dataset.unlist]; saveShortlist(); renderShortlist(); if (rec) renderListings(inputs()); });
   }
@@ -1370,11 +1205,35 @@
       Provided as is, for information only: not financial, legal or real estate advice.`;
   }
 
-  // ---------------------------------------------------------------- search by city
+  // ---------------------------------------------------------------- homes for sale: map + list (the main view)
+  // A search (zip, city or county) lands here: homes on a map and as cards, each with a plain verdict
+  // (good price / fair / priced high / over budget), what to offer, and its top reasons. The area
+  // report and the full deal check open from here.
   let PLACES = null;
   const loadPlaces = () => PLACES || (PLACES = getJSON("data/places.json").then(j => j.rows.map(r => Object.fromEntries(j.cols.map((c, i) => [c, r[i]])))).catch(e => { PLACES = null; throw e; }));
   const norm = t => t.toLowerCase().replace(/^st\.? /, "saint ").replace(/[^a-z ]/g, "").trim();
-  let cityState = null, citySort = "best";
+  let homesCtx = null;                     // { label, st, zips: [place rows], here: Set of zips searched, mode }
+  const recs = new Map(), partsCache = new Map();
+  const F = { max: null, beds: 0, baths: 0, type: "All", sqft: 0, nearby: false, sort: "best", vaastu: false, shown: 24 };
+
+  function updateBudget() {
+    const el = $("#budgetTxt");
+    if (el && NAT) el.textContent = `up to ${k(Calc.maxPrice(inputs()).price)}`;
+  }
+  function placeFromRec(z, r) {
+    return { zip: z, city: r.city, state: r.state, county: r.county, lat: r.lat, lon: r.lon, value: r.zhvi_now?.all || r.acs?.home_value,
+      rent: r.zori_now || r.acs?.rent, tax: r.acs?.tax_rate, school: r.schools?.district?.n10, growth: r.growth?.rate,
+      hazard: r.hazard?.label, market: r.market?.label, fc1: r.fc?.["1"]?.[1], crime: r.ind?.crime };
+  }
+  async function zipSearch(z) {
+    $("#status").textContent = "Loading...";
+    let r = null;
+    try { r = (await getShard(z.slice(0, 3)))[z]; } catch (e) { /* none */ }
+    if (!r) { $("#status").textContent = `No data for ${z}. It may be a PO box or business-only zip.`; return; }
+    recs.set(z, r);
+    homesCtx = { label: `${z}${r.city ? " " + r.city : ""}`, st: r.state, zips: [{ ...placeFromRec(z, r), here: true, mi: 0 }], here: new Set([z]), mode: "zip" };
+    showHomes(`?zip=${z}`, z);
+  }
   async function citySearch(q, st) {
     $("#status").textContent = "Searching...";
     let places;
@@ -1385,184 +1244,282 @@
     if (!hits.length && !isCounty) hits = places.filter(p => norm(p.city).startsWith(name));
     if (wantSt) hits = hits.filter(p => p.state === wantSt);
     const states = [...new Set(hits.map(p => p.state))];
-    if (!hits.length) { $("#status").textContent = `No city called "${q}" found. Try a nearby city or a zip code.`; return; }
+    if (!hits.length) { $("#status").textContent = `Nothing found for "${q}". Try a city, county, zip, or a full street address.`; return; }
     if (states.length > 1) {
-      $("#status").textContent = "";
-      $("#results").hidden = true;
-      $("#s-city").hidden = false;
-      $("#s-city").innerHTML = `<h2>Which ${esc(hits[0].city)}?</h2><div class="chips">${states.sort().map(x => `<button type="button" data-st="${x}">${esc(hits.find(p => p.state === x).city)}, ${x}</button>`).join("")}</div>`;
-      $("#s-city").querySelectorAll("[data-st]").forEach(b => b.onclick = () => citySearch(q.replace(/,.*$/, ""), b.dataset.st));
+      $("#status").innerHTML = `Which one? ${states.sort().map(x => `<button type="button" class="link" data-st="${x}">${esc(hits.find(p => p.state === x).city)}, ${x}</button>`).join(" &middot; ")}`;
+      $("#status").querySelectorAll("[data-st]").forEach(b => b.onclick = () => citySearch(q.replace(/,.*$/, ""), b.dataset.st));
       return;
     }
-    cityState = { q, st: states[0], hits, label: isCounty ? hits[0].county : hits[0].city, filter: "All" };
-    history.replaceState(null, "", `?city=${encodeURIComponent(`${cityState.label}, ${states[0]}`)}`);
-    renderCity();
-  }
-  function renderCity() {
-    const { hits, st, label } = cityState;
     const lat = hits.reduce((a, p) => a + p.lat, 0) / hits.length, lon = hits.reduce((a, p) => a + p.lon, 0) / hits.length;
     const mi = p => 69 * Math.hypot(p.lat - lat, (p.lon - lon) * Math.cos(lat * Math.PI / 180));
-    loadPlaces().then(all => {
-      const inCity = new Set(hits.map(p => p.zip));
-      const list = all.filter(p => inCity.has(p.zip) || mi(p) <= 10).map(p => ({ ...p, mi: mi(p), here: inCity.has(p.zip) }));
-      // what you can afford in each zip, using its own tax rate and its state's insurance and closing costs
-      const base = inputs();
-      list.forEach(p => {
-        const s = STATES[p.state] || {}, ins = s.home_ins ? s.home_ins / 4000 : 0.5, tax = Math.max(p.tax || 1.1, p.state === "CA" ? 1.1 : 0);
-        const o = { ...base, taxRate: tax, insRate: ins, closingPct: (s.closing_fees ?? 1) + 1 + ins + tax / 4 };
-        p.max = Calc.maxPrice(o).price; p.fits = !!(p.value && p.value <= p.max);
-      });
-      // overall score among the zips you can afford
-      const fit = list.filter(p => p.fits);
-      const safeR = rankPct(fit.map(p => -(p.crime ?? NaN))), growR = rankPct(fit.map(p => p.growth ?? NaN)),
-        outR = rankPct(fit.map(p => p.fc1 ?? NaN)), roomR = rankPct(fit.map(p => (p.max - p.value) / p.max));
-      if (work) fetchDrives(list.map(p => [p.lat, p.lon])).then(ch => { if (ch && !$("#s-city").hidden) renderCity(); });
-      list.forEach(p => {
-        if (!p.fits) { p.score = null; return; }
-        const mins = work ? drive.get(keyOf(p.lat, p.lon)) : null;
-        p.parts = { school: p.school ? p.school * 10 : null, safety: safeR(-(p.crime ?? NaN)), risk: HAZ[p.hazard] ?? null,
-          growth: growR(p.growth ?? NaN), outlook: outR(p.fc1 ?? NaN), room: roomR((p.max - p.value) / p.max),
-          commute: mins != null && mins >= 0 ? clamp100(100 - (mins - 10) * 2) : null };
-        p.score = blend(p.parts, zOn);
-      });
-      const cities = [...new Set(list.map(p => p.city))].sort();
-      const sorters = { best: (a, b) => (b.fits - a.fits) || ((b.score ?? -1) - (a.score ?? -1)), value: (a, b) => (a.value || 9e9) - (b.value || 9e9),
-        school: (a, b) => (b.school || 0) - (a.school || 0), growth: (a, b) => (b.growth ?? -99) - (a.growth ?? -99), near: (a, b) => a.mi - b.mi };
-      const shown = list.filter(p => cityState.filter === "All" || p.city === cityState.filter).sort(sorters[citySort] || sorters.best);
-      const nFit = shown.filter(p => p.fits).length;
-      $("#status").textContent = "";
-      $("#results").hidden = true;
-      $("#s-city").hidden = false;
-      cityState.zips = list;
-      $("#s-city").innerHTML = `<h2>Homes for sale in ${esc(label)}, ${st}</h2>
-        <div id="cityHomes"></div>
-        <details class="sub" id="zipCompare" ${cityState.zipOpen ? "open" : ""}><summary>Compare the ${list.length} zip codes in and around ${esc(label)}</summary>
-        <p class="verdict"><b>${nFit}</b> of ${shown.length} have a typical home in your budget. Tap a row for the full zip report.</p>
-        <div class="chips" id="cityChips">${["All", ...cities].map(c => `<button type="button" class="${c === cityState.filter ? "on" : ""}" data-c="${esc(c)}">${esc(c)}</button>`).join("")}</div>
-        ${factorChips(ZFACT, zOn, "zfact")}
-        <div class="row"><label class="note">Sort <select id="citySort">${[["best", "Best overall (in budget)"], ["value", "Cheapest first"], ["school", "Best schools"], ["growth", "Fastest growing"], ["near", "Closest"]].map(([v, l]) => `<option value="${v}" ${v === citySort ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
-        <div class="table-wrap"><table><tr><th>Zip</th><th>City, county</th><th>Score</th><th>Typical home</th><th>In budget?</th><th>Schools</th><th>Growth</th><th>Next year</th><th>Disaster risk</th><th>Rent</th><th>Miles</th></tr>
-          ${shown.map(p => `<tr data-zip="${p.zip}"${p.here ? ' class="best"' : ""}><td><b>${p.zip}</b></td><td>${esc(p.city)}${p.county ? `, <span class="note">${esc(p.county)}</span>` : ""}</td>
-            <td>${p.score != null ? `<b>${p.score}</b>` : ""}</td><td>${p.value ? k(p.value) : "n/a"}</td>
-            <td>${p.fits ? '<span class="pill">Yes</span>' : `<span class="pill warn">max ${k(p.max)}</span>`}</td>
-            <td>${p.school ? p.school + "/10" : ""}</td><td>${p.growth != null ? signed(p.growth) : ""}</td><td>${p.fc1 != null ? signed(p.fc1) : ""}</td>
-            <td>${esc(p.hazard || "")}</td><td>${p.rent ? money(p.rent) : ""}</td><td>${p.mi.toFixed(1)}</td></tr>`).join("")}
-        </table></div>
-        <p class="note">Score (0-100) averages what you pick, compared with the other zips here that fit your budget. Highlighted rows are in ${esc(label)}.</p></details>`;
-      $("#zipCompare").ontoggle = e => { cityState.zipOpen = e.target.open; };
-      renderCityHomes();
-      $("#citySort").onchange = e => { citySort = e.target.value; renderCity(); };
-      $("#s-city").querySelectorAll("[data-c]").forEach(b => b.onclick = () => { cityState.filter = b.dataset.c; renderCity(); });
-      $("#s-city").querySelectorAll("#zfact [data-f]").forEach(b => b.onclick = () => { const f = b.dataset.f; zOn.has(f) ? zOn.delete(f) : zOn.add(f); saveSet("hc-zfact", zOn); renderCity(); });
-      $("#s-city").querySelectorAll("tr[data-zip]").forEach(tr => tr.onclick = () => { $("#zip").value = tr.dataset.zip; lookup(); window.scrollTo(0, 0); });
-    });
+    const here = new Set(hits.map(p => p.zip));
+    const zips = places.filter(p => here.has(p.zip) || mi(p) <= 10).map(p => ({ ...p, mi: mi(p), here: here.has(p.zip) }));
+    const label = isCounty ? hits[0].county : hits[0].city;
+    homesCtx = { label, st: states[0], zips, here, mode: isCounty ? "county" : "city" };
+    showHomes(`?city=${encodeURIComponent(`${label}, ${states[0]}`)}`, `${label}, ${states[0]}`);
   }
-
-  // ---------------------------------------------------------------- homes for sale across a city (listing-site view)
-  const cityF = { max: null, beds: 0, baths: 0, type: "All", sqft: 0, nearby: false, sort: "best", shown: 24 };
-  let cityTimer = null;
-  function cityHomesChanged(z) {
-    if (!cityState || $("#s-city").hidden || !(cityState.zips || []).some(p => p.zip === z)) return;
-    clearTimeout(cityTimer); cityTimer = setTimeout(renderCityHomes, 300);
+  async function houseSearch(q) {
+    if (!API) { $("#status").textContent = "House lookup isn't set up for this site."; return; }
+    $("#status").textContent = "Looking up the house...";
+    try {
+      const a = addressFrom(q), r = await fetch(`${API}/api/listings?address=${encodeURIComponent(a)}&v=2`), j = await r.json();
+      if (!r.ok || !j.home?.zip) throw new Error("not found");
+      fullCache.set(j.home.id, j.home);
+      await zipSearch(j.home.zip);
+      openHome(j.home, j.home.zip);
+    } catch (e) { $("#status").textContent = "Couldn't find that house. Try the full address with city, state and zip, or paste the listing link."; }
   }
-  function cityZips() {
-    const zs = (cityState.zips || []).filter(p => p.here).slice(0, 8);
-    if (cityF.nearby) zs.push(...cityState.zips.filter(p => !p.here).sort((a, b) => a.mi - b.mi).slice(0, 12));
+  function showHomes(url, remember) {
+    F.shown = 24;
+    $("#status").textContent = "";
+    $("#results").hidden = true;
+    $("#v-homes").hidden = false;
+    history.replaceState(null, "", url);
+    try { localStorage.setItem("hc-search", remember); } catch (e) { /* ignore */ }
+    renderHomes();
+    renderCompare();
+    renderShortlist();
+  }
+  function homeZips() {
+    const zs = homesCtx.zips.filter(p => p.here).slice(0, 8);
+    if (F.nearby) zs.push(...homesCtx.zips.filter(p => !p.here).sort((a, b) => a.mi - b.mi).slice(0, 12));
     return zs;
   }
-  function renderCityHomes() {
-    const el = $("#cityHomes");
-    if (!el || !cityState) return;
-    if (!API) { el.innerHTML = `<p class="note">Live listings aren't set up for this site.</p>`; return; }
-    const zs = cityZips(), o = inputs();
-    zs.forEach(p => { if (!liveCache.has(p.zip) && liveState.get(p.zip) !== "loading" && liveState.get(p.zip) !== "failed") loadLive(p.zip); });
-    const loading = zs.filter(p => !liveCache.has(p.zip) && liveState.get(p.zip) !== "failed").length;
-    // every home for sale in those zips, with what you can afford there
+  let homesTimer = null;
+  function homesChanged(z) {
+    if (!homesCtx || $("#v-homes").hidden || !homesCtx.zips.some(p => p.zip === z)) return;
+    clearTimeout(homesTimer); homesTimer = setTimeout(renderHomes, 300);
+  }
+
+  // Everything one card needs: verdict, offer, reasons, score.
+  function judge(h, o, ranks) {
+    const s = h.s, r = recs.get(h.p.zip), L = liveCache.get(h.p.zip);
+    let d = null;
+    if (r && L) {
+      if (!partsCache.has(h.p.zip) || partsCache.get(h.p.zip).L !== L) {
+        const hist = priceHistory(r);
+        partsCache.set(h.p.zip, { L, hist, ...Deal.zipParts(L.sold, r.zhvi_recent, hist) });
+      }
+      const pc = partsCache.get(h.p.zip);
+      try { d = Deal.analyze(s, { sold: L.sold || [], active: L.sale, monthly: r.zhvi_recent, yearly: pc.hist, rec: r, o: h.o, maxPrice: h.max, comp: pc.comp, bt: pc.bt }); } catch (e) { d = null; }
+    }
+    const near = s.near, nz = s.noise, mins = work && s.latitude ? drive.get(keyOf(s.latitude, s.longitude)) : null;
+    const vs = vaastuScore({ facing: s.orient?.facing, tjunction: s.orient ? !!s.orient.tjunction : undefined });
+    const parts = { space: ranks.space(s.squareFootage), value: d && Number.isFinite(d.gap) ? clamp100(50 - d.gap * 4) : null,
+      school: h.p.school ? h.p.school * 10 : null,
+      shop: near?.grocery?.m != null ? clamp100(100 - (near.grocery.m - 300) / 17) : null,
+      walk: near ? Math.round(WALK.filter(([kk]) => near[kk]?.n > 0).length / WALK.length * 100) : null,
+      commute: mins != null && mins >= 0 ? clamp100(100 - (mins - 10) * 2) : null,
+      quiet: nz ? clamp100(100 - (nz.highway_m != null && nz.highway_m < 300 ? 40 : 0) - (nz.rail_m != null && nz.rail_m < 250 ? 30 : 0) - (nz.airport_km != null && nz.airport_km < 5 ? 30 : 0)) : null,
+      vaastu: vs ? vs.pct : null };
+    const score = blend(parts, new Set([...lOn, "school"]));
+    const gap = d?.gap;
+    const verdict = !h.fits ? ["over", "Over budget"] : !Number.isFinite(gap) ? ["none", "No estimate"]
+      : gap <= -5 ? ["good", "Good price"] : gap <= 8 ? ["fair", "Fair price"] : ["high", "Priced high"];
+    const why = [];                                  // [good?, text], best first
+    if (Number.isFinite(gap) && Math.abs(gap) >= 3) why.push([gap < 0, `${Math.abs(gap).toFixed(0)}% ${gap < 0 ? "below" : "above"} its value estimate`]);
+    if (!h.fits) why.push([false, `${k(s.price - h.max)} over your budget`]);
+    if (d?.stale) why.push([true, `Listed ${s.daysOnMarket} days: room to negotiate`]);
+    else if (s.daysOnMarket != null && s.daysOnMarket <= 7) why.push([null, "Just listed"]);
+    if (d?.bad.length) why.push([false, d.bad[0][0].toUpperCase() + d.bad[0].slice(1)]);
+    if (d?.flip) why.push([false, "Likely flipped: check the work"]);
+    if (d?.good.length) why.push([true, d.good[0][0].toUpperCase() + d.good[0].slice(1)]);
+    if (parts.space >= 80) why.push([true, "Roomy for the area"]);
+    if (parts.school >= 80) why.push([true, `Schools ${h.p.school}/10`]);
+    if (parts.commute >= 80) why.push([true, `${mins} min to work`]);
+    if (parts.vaastu >= 80) why.push([true, "Vaastu-friendly facing"]);
+    if (s.hoa > 400) why.push([false, `HOA ${money(s.hoa)}/mo`]);
+    return { d, parts, score, verdict, why: why.slice(0, 3), mins };
+  }
+
+  function renderHomes() {
+    if (!homesCtx) return;
+    updateBudget();
+    const o = inputs(), zs = homeZips();
+    // load what's missing: zip records (for value history) and live listings
+    zs.forEach(p => {
+      if (!recs.has(p.zip)) getShard(p.zip.slice(0, 3)).then(sh => { if (sh[p.zip]) { recs.set(p.zip, sh[p.zip]); homesChanged(p.zip); } }).catch(() => {});
+      if (API && !liveCache.has(p.zip) && !["loading", "failed"].includes(liveState.get(p.zip))) loadLive(p.zip);
+    });
+    const loading = zs.filter(p => API && !liveCache.has(p.zip) && liveState.get(p.zip) !== "failed").length;
     const homes = [];
     for (const p of zs) {
       const L = liveCache.get(p.zip);
       if (!L) continue;
       const st = STATES[p.state] || {}, ins = st.home_ins ? st.home_ins / 4000 : 0.5, tax = Math.max(p.tax || 1.1, p.state === "CA" ? 1.1 : 0);
-      const oz = { ...o, taxRate: tax, insRate: ins, closingPct: (st.closing_fees ?? 1) + 1 + ins + tax / 4 };
-      const zdom = median(L.sale.map(x => x.daysOnMarket).filter(Number.isFinite));
       for (const s of L.sale) {
-        if (!s.price || ["Land"].includes(s.propertyType)) continue;
-        const max = Calc.maxPrice({ ...oz, hoa: s.hoa || 0 }).price;
-        homes.push({ s, zipRec: p, fits: s.price <= max, max, zdom, pay: Calc.monthly(s.price, { ...oz, hoa: s.hoa || 0 }).total });
+        if (!s.price || s.propertyType === "Land") continue;
+        const oz = { ...o, taxRate: tax, insRate: ins, closingPct: (st.closing_fees ?? 1) + 1 + ins + tax / 4, hoa: s.hoa || 0 };
+        const max = Calc.maxPrice(oz).price;
+        homes.push({ s, p, o: oz, max, fits: s.price <= max, pay: Calc.monthly(s.price, oz).total });
       }
     }
-    const types = ["All", ...new Set(homes.map(h => LISTING_GROUPS[h.s.propertyType] || h.s.propertyType || "Other"))];
-    const cap = cityF.max ?? Math.round(Calc.maxPrice(o).price / 5000) * 5000;
-    const passes = h => (h.s.bedrooms ?? 0) >= cityF.beds && (h.s.bathrooms ?? 0) >= cityF.baths
-      && (!cityF.sqft || (h.s.squareFootage ?? 0) >= cityF.sqft) && (cityF.type === "All" || (LISTING_GROUPS[h.s.propertyType] || h.s.propertyType) === cityF.type);
+    const budget = Math.round(Calc.maxPrice(o).price / 5000) * 5000, cap = F.max ?? budget;
+    const typeOf = s => LISTING_GROUPS[s.propertyType] || s.propertyType || "Other";
+    const passes = h => (h.s.bedrooms ?? 0) >= F.beds && (h.s.bathrooms ?? 0) >= F.baths && (!F.sqft || (h.s.squareFootage ?? 0) >= F.sqft)
+      && (F.type === "All" || typeOf(h.s) === F.type) && (!F.vaastu || ["N", "E", "NE"].includes(h.s.orient?.facing));
     let shown = homes.filter(h => h.s.price <= cap && passes(h)), noneInBudget = false;
-    if (!shown.length && cityF.max == null && homes.length) { shown = homes.filter(passes); noneInBudget = true; }
-    // overall score among what's shown
-    const spaceR = rankPct(shown.map(h => h.s.squareFootage)), valueR = rankPct(shown.map(h => h.s.estimate ? h.s.estimate / h.s.price : NaN)),
-      schoolOf = h => h.zipRec.school ? h.zipRec.school * 10 : null;
-    if (work) fetchDrives(shown.filter(h => h.s.latitude).map(h => [h.s.latitude, h.s.longitude])).then(ch => { if (ch) cityHomesChanged(zs[0]?.zip); });
-    for (const h of shown) {
-      const s = h.s, near = s.near, nz = s.noise, mins = work && s.latitude ? drive.get(keyOf(s.latitude, s.longitude)) : null;
-      const vs = vaastuScore({ facing: s.orient?.facing, tjunction: s.orient ? !!s.orient.tjunction : undefined });
-      h.parts = { space: spaceR(s.squareFootage), value: valueR(s.estimate ? s.estimate / s.price : NaN), school: schoolOf(h),
-        shop: near?.grocery?.m != null ? clamp100(100 - (near.grocery.m - 300) / 17) : null,
-        walk: near ? Math.round(WALK.filter(([kk]) => near[kk]?.n > 0).length / WALK.length * 100) : null,
-        commute: mins != null && mins >= 0 ? clamp100(100 - (mins - 10) * 2) : null,
-        quiet: nz ? clamp100(100 - (nz.highway_m != null && nz.highway_m < 300 ? 40 : 0) - (nz.rail_m != null && nz.rail_m < 250 ? 30 : 0) - (nz.airport_km != null && nz.airport_km < 5 ? 30 : 0)) : null,
-        vaastu: vs ? vs.pct : null };
-      h.score = blend(h.parts, new Set([...lOn, "school"]));
-      // quick advice from the listing itself
-      const tips = [];
-      if (s.estimate) { const g = (s.price / s.estimate - 1) * 100; if (g > 8) tips.push(`Priced ${g.toFixed(0)}% above its estimate`); else if (g < -5) tips.push(`Priced ${(-g).toFixed(0)}% below its estimate`); }
-      if (s.daysOnMarket != null && s.daysOnMarket > Math.max(60, 1.5 * (h.zdom || 45))) tips.push(`Listed ${s.daysOnMarket} days: room to negotiate`);
-      else if (s.daysOnMarket != null && s.daysOnMarket <= 7) tips.push("New listing");
-      if (/price (?:reduction|reduced|improvement)|just reduced/i.test(s.text || "")) tips.push("Price already cut");
-      if (s.hoa) tips.push(`HOA ${money(s.hoa)}/mo`);
-      if (mins != null && mins >= 0) tips.push(`${mins} min drive to work`);
-      h.tips = tips;
-    }
-    const sorters = { best: (a, b) => (b.fits - a.fits) || ((b.score ?? -1) - (a.score ?? -1)), low: (a, b) => a.s.price - b.s.price,
-      high: (a, b) => b.s.price - a.s.price, new: (a, b) => (a.s.daysOnMarket ?? 1e9) - (b.s.daysOnMarket ?? 1e9), big: (a, b) => (b.s.squareFootage || 0) - (a.s.squareFootage || 0) };
-    shown.sort(noneInBudget && cityF.sort === "best" ? sorters.low : sorters[cityF.sort] || sorters.best);
-    const sel = (id, opts, v) => `<select id="${id}">${opts.map(([val, lab]) => `<option value="${val}" ${String(val) === String(v) ? "selected" : ""}>${lab}</option>`).join("")}</select>`;
-    el.innerHTML = `<div class="note">${loading ? `Loading listings for ${loading} more zip code${loading > 1 ? "s" : ""} (5-30 seconds each the first time)... ` : ""}${homes.length} homes for sale in ${zs.length} zip code${zs.length > 1 ? "s" : ""}.</div>
-      <div class="row" style="margin:8px 0">
-        <label class="note">Up to ${sel("cfMax", [[cap, k(cap) + (cityF.max == null ? " (your budget)" : "")], ...[300, 400, 500, 600, 750, 1000, 1500, 2500].map(v => [v * 1000, k(v * 1000)])], cap)}</label>
-        <label class="note">Beds ${sel("cfBeds", [[0, "Any"], [1, "1+"], [2, "2+"], [3, "3+"], [4, "4+"], [5, "5+"]], cityF.beds)}</label>
-        <label class="note">Baths ${sel("cfBaths", [[0, "Any"], [1, "1+"], [2, "2+"], [3, "3+"]], cityF.baths)}</label>
-        <label class="note">Size ${sel("cfSqft", [[0, "Any"], [1000, "1,000+ sq ft"], [1500, "1,500+"], [2000, "2,000+"], [3000, "3,000+"]], cityF.sqft)}</label>
-        <label class="note">Type ${sel("cfType", types.map(t => [t, t]), cityF.type)}</label>
-        <label class="note">Sort ${sel("cfSort", [["best", "Best match"], ["low", "Price, low to high"], ["high", "Price, high to low"], ["new", "Newest"], ["big", "Largest"]], cityF.sort)}</label>
-        <label class="note"><input type="checkbox" id="cfNear" ${cityF.nearby ? "checked" : ""}> Include nearby towns</label>
+    if (!shown.length && F.max == null && homes.length) { shown = homes.filter(passes); noneInBudget = true; }
+    const ranks = { space: rankPct(shown.map(h => h.s.squareFootage)) };
+    if (work) fetchDrives(shown.filter(h => h.s.latitude).map(h => [h.s.latitude, h.s.longitude])).then(ch => { if (ch) homesChanged(zs[0]?.zip); });
+    for (const h of shown) h.j = judge(h, o, ranks);
+    const bonus = { good: 12, fair: 4, none: 0, high: -12, over: -40 };
+    const sorters = { best: (a, b) => (b.j.score ?? 50) + bonus[b.j.verdict[0]] - ((a.j.score ?? 50) + bonus[a.j.verdict[0]]),
+      low: (a, b) => a.s.price - b.s.price, high: (a, b) => b.s.price - a.s.price,
+      new: (a, b) => (a.s.daysOnMarket ?? 1e9) - (b.s.daysOnMarket ?? 1e9), big: (a, b) => (b.s.squareFootage || 0) - (a.s.squareFootage || 0) };
+    shown.sort(noneInBudget && F.sort === "best" ? sorters.low : sorters[F.sort] || sorters.best);
+
+    // one line about the area
+    const here = homesCtx.zips.filter(p => p.here), medOf = key => median(here.map(p => p[key]).filter(Number.isFinite));
+    const hz = here.map(p => p.hazard).filter(Boolean), mk = here.map(p => p.market).filter(Boolean);
+    const mode = a => a.sort((x, y) => a.filter(v => v === y).length - a.filter(v => v === x).length)[0];
+    $("#areaStrip").innerHTML = `<h2>${esc(homesCtx.label)}${homesCtx.mode !== "zip" ? `, ${homesCtx.st}` : ""}</h2>
+      <div class="facts">
+        ${Number.isFinite(medOf("value")) ? `<span>Typical home <b>${k(medOf("value"))}</b></span>` : ""}
+        ${mk.length ? `<span>${esc(mode(mk))}</span>` : ""}
+        ${Number.isFinite(medOf("school")) ? `<span>Schools <b>${Math.round(medOf("school"))}/10</b></span>` : ""}
+        ${hz.length ? `<span>Disaster risk <b>${esc(mode(hz).replace("Relatively ", "").toLowerCase())}</b></span>` : ""}
+        ${Number.isFinite(medOf("growth")) ? `<span>Population <b>${signed(medOf("growth"))}/yr</b></span>` : ""}
       </div>
-      ${factorChips(LFACT, lOn, "cfFact")}
-      <p class="verdict">${noneInBudget ? `Nothing here is within your budget (${k(cap)}). Showing the cheapest homes instead.` : `<b>${shown.length}</b> home${shown.length === 1 ? "" : "s"} match. ${shown.length ? "Best matches first." : "Try a higher price or fewer filters."}`}</p>
-      <div class="listings">${shown.slice(0, cityF.shown).map(h => {
-        const s = h.s, id = esc(s.id || s.formattedAddress);
-        return `<div class="listing">
-          ${s.photo && s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener" class="photo"><img src="${esc(s.photo)}" alt="Listing photo" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.remove()"><span>Photo: Realtor.com &middot; open listing</span></a>` : ""}
-          <div class="price">${money(s.price)} ${h.fits ? '<span class="pill">In budget</span>' : ""} ${h.score != null ? `<span class="pill">Score ${h.score}</span>` : ""}</div>
-          <div>${s.bedrooms ?? "?"} bd &middot; ${s.bathrooms ?? "?"} ba${s.squareFootage ? ` &middot; ${s.squareFootage.toLocaleString()} sq ft` : ""} &middot; ${esc(LISTING_GROUPS[s.propertyType] || s.propertyType || "")}</div>
-          <div class="note">${esc(s.formattedAddress || "")}</div>
-          <div class="note">About ${money(h.pay)}/mo${h.zipRec.school ? ` &middot; schools ${h.zipRec.school}/10` : ""}${s.yearBuilt ? ` &middot; built ${s.yearBuilt}` : ""}</div>
-          ${h.tips.length ? `<div class="note"><b>${h.tips.join(" &middot; ")}</b></div>` : ""}
-          ${s.orient?.facing ? `<div class="note">Faces ${DIR_NAMES[s.orient.facing]} &middot; Vaastu ${h.parts.vaastu ?? "?"}%</div>` : ""}
-          <div class="row" style="margin-top:6px"><button type="button" data-cdeal="${id}" data-zip="${h.zipRec.zip}">Deal check</button>
-            <button type="button" class="link" data-copen="${h.zipRec.zip}">Zip report</button></div>
-        </div>`; }).join("")}</div>
-      ${shown.length > cityF.shown ? `<p><button type="button" class="link" id="cfMore">Show more (${shown.length - cityF.shown} left)</button></p>` : ""}`;
-    const on = (id, f) => { const x = el.querySelector("#" + id); if (x) x.onchange = e => { f(e.target); cityF.shown = 24; renderCityHomes(); }; };
-    on("cfMax", t => { cityF.max = Number(t.value); }); on("cfBeds", t => { cityF.beds = Number(t.value); }); on("cfBaths", t => { cityF.baths = Number(t.value); });
-    on("cfSqft", t => { cityF.sqft = Number(t.value); }); on("cfType", t => { cityF.type = t.value; }); on("cfSort", t => { cityF.sort = t.value; });
-    on("cfNear", t => { cityF.nearby = t.checked; });
-    if (el.querySelector("#cfMore")) el.querySelector("#cfMore").onclick = () => { cityF.shown += 24; renderCityHomes(); };
-    el.querySelectorAll("#cfFact [data-f]").forEach(b => b.onclick = () => { const f = b.dataset.f; lOn.has(f) ? lOn.delete(f) : lOn.add(f); saveSet("hc-lfact", lOn); renderCityHomes(); });
-    el.querySelectorAll("[data-copen]").forEach(b => b.onclick = () => { $("#zip").value = b.dataset.copen; lookup(); window.scrollTo(0, 0); });
-    el.querySelectorAll("[data-cdeal]").forEach(b => b.onclick = async () => {
-      const z = b.dataset.zip, s = (liveCache.get(z)?.sale || []).find(x => (x.id || x.formattedAddress) === b.dataset.cdeal);
-      $("#zip").value = z; await lookup();
-      if (s) openDeal(s);
+      <div class="row">${homesCtx.zips.filter(p => p.here).slice(0, 8).map(p => `<button type="button" class="chipbtn" data-report="${p.zip}">Area report: ${p.zip}</button>`).join("")}</div>`;
+    $("#areaStrip").querySelectorAll("[data-report]").forEach(b => b.onclick = () => openReport(b.dataset.report));
+
+    const types = ["All", ...new Set(homes.map(h => typeOf(h.s)))];
+    const sel = (id, opts, v) => `<select id="${id}">${opts.map(([val, lab]) => `<option value="${val}" ${String(val) === String(v) ? "selected" : ""}>${lab}</option>`).join("")}</select>`;
+    $("#filters").innerHTML = `<div class="row filters">
+        ${sel("fMax", [[cap, `Up to ${k(cap)}${F.max == null ? " (budget)" : ""}`], ...[300, 400, 500, 600, 750, 1000, 1500, 2500, 5000].map(v => [v * 1000, `Up to ${k(v * 1000)}`])], cap)}
+        ${sel("fBeds", [[0, "Any beds"], [1, "1+ beds"], [2, "2+ beds"], [3, "3+ beds"], [4, "4+ beds"], [5, "5+ beds"]], F.beds)}
+        ${sel("fBaths", [[0, "Any baths"], [1, "1+ baths"], [2, "2+ baths"], [3, "3+ baths"]], F.baths)}
+        ${sel("fType", types.map(t => [t, t === "All" ? "All types" : t]), F.type)}
+        ${sel("fSort", [["best", "Best match"], ["low", "Lowest price"], ["high", "Highest price"], ["new", "Newest"], ["big", "Largest"]], F.sort)}
+      </div>
+      <details class="sub"><summary>More filters</summary>
+        <div class="row filters" style="margin-top:6px">
+          ${sel("fSqft", [[0, "Any size"], [1000, "1,000+ sq ft"], [1500, "1,500+ sq ft"], [2000, "2,000+ sq ft"], [3000, "3,000+ sq ft"]], F.sqft)}
+          <label class="note"><input type="checkbox" id="fVaastu" ${F.vaastu ? "checked" : ""}> Vaastu facing only (N, E, NE)</label>
+          ${homesCtx.mode !== "zip" ? `<label class="note"><input type="checkbox" id="fNear" ${F.nearby ? "checked" : ""}> Include nearby towns</label>` : ""}
+        </div>
+        ${factorChips(LFACT, lOn, "fFact")}
+        ${work ? "" : `<p class="note">Add your work address under "Your budget" to rank by commute.</p>`}
+      </details>
+      <p class="verdict">${loading ? `<span class="note">Loading homes for ${loading} zip code${loading > 1 ? "s" : ""} (5-30 s the first time)... </span>` : ""}
+        ${noneInBudget ? `Nothing within your budget of ${k(budget)} here. Cheapest homes shown.` : `<b>${shown.length}</b> home${shown.length === 1 ? "" : "s"}${shown.length ? ", best matches first" : ". Try fewer filters or a higher price"}.`}</p>`;
+    const on = (id, f) => { const x = $("#" + id); if (x) x.onchange = e => { f(e.target); F.shown = 24; renderHomes(); }; };
+    on("fMax", t => { F.max = Number(t.value) === budget ? null : Number(t.value); }); on("fBeds", t => { F.beds = Number(t.value); });
+    on("fBaths", t => { F.baths = Number(t.value); }); on("fType", t => { F.type = t.value; }); on("fSort", t => { F.sort = t.value; });
+    on("fSqft", t => { F.sqft = Number(t.value); }); on("fVaastu", t => { F.vaastu = t.checked; }); on("fNear", t => { F.nearby = t.checked; });
+    $("#filters").querySelectorAll("#fFact [data-f]").forEach(b => b.onclick = () => { const f = b.dataset.f; lOn.has(f) ? lOn.delete(f) : lOn.add(f); saveSet("hc-lfact", lOn); renderHomes(); });
+
+    const VCLS = { good: "pill", fair: "pill", none: "pill muted", high: "pill warn", over: "pill warn" };
+    $("#homeList").innerHTML = shown.slice(0, F.shown).map(h => {
+      const s = h.s, id = esc(s.id || s.formattedAddress), j = h.j, saved = shortlist[s.id || s.formattedAddress];
+      return `<article class="home" data-id="${id}">
+        ${s.photo ? `<div class="photo">${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">` : ""}<img src="${esc(s.photo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('.photo').remove()">${s.url ? "</a>" : ""}<span>Photo: Realtor.com</span></div>` : ""}
+        <div class="body">
+          <div class="top"><span class="price">${money(s.price)}</span><span class="${VCLS[j.verdict[0]]}">${j.verdict[1]}</span></div>
+          <div>${s.bedrooms ?? "?"} bd &middot; ${s.bathrooms ?? "?"} ba${s.squareFootage ? ` &middot; ${s.squareFootage.toLocaleString()} sq ft` : ""} &middot; ${esc(typeOf(s))}</div>
+          <div class="note">${esc((s.formattedAddress || "").replace(/, [A-Z]{2},? \d{5}$/, ""))}</div>
+          ${j.d && h.fits ? `<div class="offer">Offer around <b>${k(Math.min(j.d.opening, j.d.walk))}</b> &middot; ${money(h.pay)}/mo</div>` : `<div class="note">${money(h.pay)}/mo</div>`}
+          <ul class="why">${j.why.map(([g, t]) => `<li class="${g === true ? "pro" : g === false ? "con" : ""}">${esc(t)}</li>`).join("")}</ul>
+          <div class="row"><button type="button" data-open="${id}" data-zip="${h.p.zip}">Details and offer</button>
+            <button type="button" class="link" data-save="${id}" data-zip="${h.p.zip}">${saved ? "&#9829; Saved" : "&#9825; Save"}</button></div>
+        </div></article>`;
+    }).join("") + (shown.length > F.shown ? `<button type="button" class="link" id="fMore">Show more (${shown.length - F.shown} left)</button>` : "");
+    const find = (zz, id) => (liveCache.get(zz)?.sale || []).find(x => (x.id || x.formattedAddress) === id);
+    $("#homeList").querySelectorAll("[data-open]").forEach(b => b.onclick = () => { const s = find(b.dataset.zip, b.dataset.open); if (s) openHome(s, b.dataset.zip); });
+    $("#homeList").querySelectorAll("[data-save]").forEach(b => b.onclick = () => { const s = find(b.dataset.zip, b.dataset.save); if (s) { zip = b.dataset.zip; toggleShortlist(s); renderHomes(); renderShortlist(); } });
+    if ($("#fMore")) $("#fMore").onclick = () => { F.shown += 24; renderHomes(); };
+    drawMap(shown);
+  }
+
+  // ---------------------------------------------------------------- the map (MapLibre + OpenFreeMap tiles, no key needed)
+  let map = null, mapReady = false, pendingMap = null;
+  function drawMap(shown) {
+    if (!window.maplibregl) { $("#mapBox").hidden = true; return; }
+    const COL = { good: "#1f9d6b", fair: "#2f6fb5", none: "#7a7f7c", high: "#c4622d", over: "#9a9a9a" };
+    const fc = { type: "FeatureCollection", features: shown.filter(h => h.s.latitude).map(h => ({ type: "Feature",
+      geometry: { type: "Point", coordinates: [h.s.longitude, h.s.latitude] },
+      properties: { id: h.s.id || h.s.formattedAddress, zip: h.p.zip, label: k(h.s.price).replace(",000", "k").replace(/\$(\d+)\.(\d)\dM/, "$$$1.$2M"), color: COL[h.j.verdict[0]] } })) };
+    pendingMap = fc;
+    if (!map) {
+      map = new maplibregl.Map({ container: "map", style: "https://tiles.openfreemap.org/styles/positron", attributionControl: { compact: true },
+        center: [homesCtx.zips[0].lon, homesCtx.zips[0].lat], zoom: 11 });
+      map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+      map.on("load", () => {
+        map.addSource("homes", { type: "geojson", data: pendingMap });
+        map.addLayer({ id: "homes-dot", type: "circle", source: "homes", paint: { "circle-radius": 6, "circle-color": ["get", "color"], "circle-stroke-width": 1.5, "circle-stroke-color": "#fff" } });
+        map.addLayer({ id: "homes-label", type: "symbol", source: "homes", minzoom: 12.5,
+          layout: { "text-field": ["get", "label"], "text-size": 11, "text-offset": [0, -1.2], "text-font": ["Noto Sans Bold"], "text-allow-overlap": false },
+          paint: { "text-color": ["get", "color"], "text-halo-color": "#fff", "text-halo-width": 1.5 } });
+        map.on("click", "homes-dot", e => {
+          const f = e.features[0].properties, s = (liveCache.get(f.zip)?.sale || []).find(x => (x.id || x.formattedAddress) === f.id);
+          if (s) openHome(s, f.zip);
+        });
+        map.on("mouseenter", "homes-dot", () => { map.getCanvas().style.cursor = "pointer"; });
+        map.on("mouseleave", "homes-dot", () => { map.getCanvas().style.cursor = ""; });
+        mapReady = true; fitMap(pendingMap);
+      });
+    } else if (mapReady) {
+      map.getSource("homes").setData(fc);
+      fitMap(fc);
+    }
+  }
+  let lastFit = "";
+  function fitMap(fc) {
+    const key = homesCtx.label + homeZips().map(p => p.zip).join();
+    if (key === lastFit || !fc.features.length) return;     // only re-centre when the place changes
+    lastFit = key;
+    const b = new maplibregl.LngLatBounds();
+    fc.features.forEach(f => b.extend(f.geometry.coordinates));
+    map.fitBounds(b, { padding: 40, maxZoom: 14, duration: 0 });
+  }
+
+  // ---------------------------------------------------------------- one home in detail (sheet over the page)
+  async function openHome(s, z) {
+    let r = recs.get(z);
+    if (!r) { try { r = (await getShard(z.slice(0, 3)))[z]; recs.set(z, r); } catch (e) { /* none */ } }
+    if (!r) return;
+    zip = z; rec = r; listing = liveCache.get(z) || null;
+    target = { type: rec.zhvi_now?.all ? "all" : "custom", custom: rec.zhvi_now?.all ? null : rec.acs?.home_value || 300000 };
+    openDeal(s);
+  }
+
+  // ---------------------------------------------------------------- compare the zips of a city (folded under the homes)
+  let zSort = "best";
+  function renderCompare() {
+    const el = $("#compareWrap");
+    if (!homesCtx || homesCtx.mode === "zip") { el.innerHTML = ""; return; }
+    const base = inputs(), list = homesCtx.zips.map(p => ({ ...p }));
+    list.forEach(p => {
+      const s = STATES[p.state] || {}, ins = s.home_ins ? s.home_ins / 4000 : 0.5, tax = Math.max(p.tax || 1.1, p.state === "CA" ? 1.1 : 0);
+      p.max = Calc.maxPrice({ ...base, taxRate: tax, insRate: ins, closingPct: (s.closing_fees ?? 1) + 1 + ins + tax / 4 }).price;
+      p.fits = !!(p.value && p.value <= p.max);
     });
+    const fit = list.filter(p => p.fits);
+    const safeR = rankPct(fit.map(p => -(p.crime ?? NaN))), growR = rankPct(fit.map(p => p.growth ?? NaN)),
+      outR = rankPct(fit.map(p => p.fc1 ?? NaN)), roomR = rankPct(fit.map(p => (p.max - p.value) / p.max));
+    list.forEach(p => {
+      if (!p.fits) { p.score = null; return; }
+      const mins = work ? drive.get(keyOf(p.lat, p.lon)) : null;
+      p.score = blend({ school: p.school ? p.school * 10 : null, safety: safeR(-(p.crime ?? NaN)), risk: HAZ[p.hazard] ?? null,
+        growth: growR(p.growth ?? NaN), outlook: outR(p.fc1 ?? NaN), room: roomR((p.max - p.value) / p.max),
+        commute: mins != null && mins >= 0 ? clamp100(100 - (mins - 10) * 2) : null }, zOn);
+    });
+    const sorters = { best: (a, b) => (b.fits - a.fits) || ((b.score ?? -1) - (a.score ?? -1)), value: (a, b) => (a.value || 9e9) - (b.value || 9e9),
+      school: (a, b) => (b.school || 0) - (a.school || 0), near: (a, b) => a.mi - b.mi };
+    list.sort(sorters[zSort]);
+    const open = el.querySelector("details")?.open;
+    el.innerHTML = `<details class="sub panel" ${open ? "open" : ""}><summary>Compare the ${list.length} zip codes in and around ${esc(homesCtx.label)}</summary>
+      ${factorChips(ZFACT, zOn, "zfact")}
+      <div class="row"><label class="note">Sort <select id="zSort">${[["best", "Best overall (in budget)"], ["value", "Cheapest"], ["school", "Best schools"], ["near", "Closest"]].map(([v, l]) => `<option value="${v}" ${v === zSort ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
+      <div class="table-wrap"><table><tr><th>Zip</th><th>City, county</th><th>Score</th><th>Typical home</th><th>In budget?</th><th>Schools</th><th>Growth</th><th>Disaster risk</th><th>Miles</th></tr>
+        ${list.map(p => `<tr data-zip="${p.zip}"${p.here ? ' class="best"' : ""}><td><b>${p.zip}</b></td><td>${esc(p.city)}${p.county ? `, <span class="note">${esc(p.county)}</span>` : ""}</td>
+          <td>${p.score ?? ""}</td><td>${p.value ? k(p.value) : "n/a"}</td><td>${p.fits ? '<span class="pill">Yes</span>' : `<span class="pill warn">max ${k(p.max)}</span>`}</td>
+          <td>${p.school ? p.school + "/10" : ""}</td><td>${p.growth != null ? signed(p.growth) : ""}</td><td>${esc(p.hazard || "")}</td><td>${p.mi.toFixed(1)}</td></tr>`).join("")}
+      </table></div><p class="note">Tap a row to see that zip's homes. Highlighted rows are in ${esc(homesCtx.label)}.</p></details>`;
+    $("#zSort").onchange = e => { zSort = e.target.value; renderCompare(); };
+    el.querySelectorAll("#zfact [data-f]").forEach(b => b.onclick = () => { const f = b.dataset.f; zOn.has(f) ? zOn.delete(f) : zOn.add(f); saveSet("hc-zfact", zOn); renderCompare(); });
+    el.querySelectorAll("tr[data-zip]").forEach(tr => tr.onclick = () => { $("#zip").value = tr.dataset.zip; zipSearch(tr.dataset.zip); window.scrollTo(0, 0); });
   }
 
   // ---------------------------------------------------------------- events
@@ -1574,16 +1531,25 @@
   $("#zip").addEventListener("input", e => {
     const v = e.target.value.trim();
     if (/^\d{3,5}$/.test(v)) getShard(v.slice(0, 3)).catch(() => {});
-    if (/^\d{5}$/.test(v) && v !== zip) lookup();
+    if (/^\d{5}$/.test(v) && !(homesCtx?.mode === "zip" && homesCtx.zips[0].zip === v)) lookup();
     if (/^[a-z]/i.test(v)) loadPlaces();               // a city name: get the search table ready
   });
   let typingTimer = null;
-  const liveUpdate = () => { clearTimeout(typingTimer); typingTimer = setTimeout(() => { saveInputs(); if (!$("#s-city").hidden && cityState) renderCity(); else if (rec) renderAll(); }, 350); };
-  $("#purpose").addEventListener("change", () => { saveInputs(); if (rec) renderAll(); });
+  function refresh() {
+    updateBudget();
+    if (!$("#v-homes").hidden && homesCtx) { renderHomes(); renderCompare(); }
+    else if (!$("#results").hidden && rec) renderAll();
+    if (deal) renderDeal(inputs());
+  }
+  const liveUpdate = () => { clearTimeout(typingTimer); typingTimer = setTimeout(() => { saveInputs(); refresh(); }, 350); };
+  $("#purpose").addEventListener("change", () => { saveInputs(); refresh(); });
+  $("#backHomes").addEventListener("click", () => { if (homesCtx) { $("#results").hidden = true; $("#v-homes").hidden = false; renderHomes(); window.scrollTo(0, 0); } else { $("#zip").value = zip; zipSearch(zip); } });
+  $("#dealModal").addEventListener("click", e => { if (e.target.id === "dealModal") { deal = null; renderDeal(inputs()); } });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && deal) { deal = null; renderDeal(inputs()); } });
   document.querySelectorAll("[data-k]").forEach(el => { el.addEventListener("input", liveUpdate); el.addEventListener("change", liveUpdate); });
   $("#resetInputs").addEventListener("click", () => {
     try { localStorage.removeItem("hc-inputs"); } catch (e) { /* ignore */ }
-    loadInputs(); if (rec) renderAll();
+    loadInputs(); refresh();
   });
   // Turn the folded sections into tabs: one section showing at a time, picked from a row of buttons.
   (function makeTabs() {

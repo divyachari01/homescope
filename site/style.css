@@ -113,3 +113,48 @@ body.tabbed details.group { display: none; }
 body.tabbed details.group.on { display: block; }
 body.tabbed details.group > summary { display: none; }
 body.tabbed details.group > section:first-of-type { border-top: 0; }
+
+/* ---------- homes view: map + list, like a listings site */
+#v-homes { background: none; border: 0; padding: 0; }
+#areaStrip h2 { font-size: 1.5rem; margin: 4px 0 6px; }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted); font-size: 0.95rem; margin-bottom: 8px; }
+.facts b { color: var(--ink); }
+.chipbtn { background: var(--card); color: var(--accent); border: 1px solid var(--line); font-weight: 500; padding: 4px 12px; font-size: 0.85rem; }
+.filters select { padding: 7px 10px; }
+.split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 14px; align-items: start; }
+#mapBox { position: sticky; top: 8px; height: calc(100vh - 24px); max-height: 760px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
+#map { width: 100%; height: 100%; }
+#homeList { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.home { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+.home .photo { position: relative; }
+.home .photo img { width: 100%; height: 180px; object-fit: cover; display: block; background: var(--line); }
+.home .photo span { position: absolute; left: 8px; bottom: 6px; font-size: 0.7rem; color: #fff; background: rgba(0,0,0,.5); padding: 1px 6px; border-radius: 4px; }
+.home .body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 3px; font-size: 0.93rem; flex: 1; }
+.home .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.home .price { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.home .offer { margin-top: 4px; }
+.home .row { margin-top: auto; padding-top: 8px; }
+.home button:not(.link) { padding: 7px 14px; }
+ul.why { list-style: none; padding: 0; margin: 4px 0 0; font-size: 0.88rem; }
+ul.why li { padding-left: 18px; position: relative; color: var(--muted); }
+ul.why li::before { content: "\2022"; position: absolute; left: 4px; }
+ul.why li.pro { color: var(--accent); }
+ul.why li.pro::before { content: "\2713"; left: 2px; }
+ul.why li.con { color: var(--warn); }
+ul.why li.con::before { content: "!"; left: 5px; font-weight: 700; }
+.pill.muted { background: var(--line); color: var(--muted); }
+#compareWrap { margin-top: 18px; }
+#v-homes #s-shortlist { margin-top: 16px; }
+.back { margin: 0 0 8px; }
+@media (max-width: 800px) {
+  .split { grid-template-columns: 1fr; }
+  #mapBox { position: relative; top: 0; height: 280px; }
+}
+
+/* ---------- one home in detail: a sheet over the page */
+#dealModal { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 50; overflow-y: auto; padding: 24px 12px; }
+#dealModal[hidden] { display: none; }
+#dealModal .sheet { max-width: 860px; margin: 0 auto; }
+#dealModal #s-deal { border: 0; margin: 0; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+body.noscroll { overflow: hidden; }
+@media (max-width: 600px) { #dealModal { padding: 0; } #dealModal #s-deal { border-radius: 0; min-height: 100vh; } }

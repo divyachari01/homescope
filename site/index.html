@@ -14,29 +14,32 @@
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"HomeScope","url":"https://divyachari01.github.io/homescope/","applicationCategory":"FinanceApplication","operatingSystem":"Any","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"description":"Free home buying report for any US zip code: listings you can afford, price forecasts, mortgage math, schools, natural hazards, commute, Vaastu and Feng Shui.","author":{"@type":"Person","name":"Divya Chari"}}</script>
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="top">
   <div class="wrap">
     <h1>HomeScope</h1>
-    <p class="tag">Look up any US city or zip code before you buy.</p>
+    <p class="tag">Find a home you can afford, and know what to offer.</p>
     <form id="lookup" class="lookup" autocomplete="off">
-      <input id="zip" placeholder="City or zip, e.g. Cupertino" aria-label="City or zip code" required>
+      <input id="zip" placeholder="City, zip, address or listing link" aria-label="City, zip code, address or listing link" required>
       <select id="purpose" aria-label="What is the home for?">
         <option value="live">To live in</option>
         <option value="rent">As a rental investment</option>
         <option value="hack">Live in part, rent out part</option>
         <option value="str">Short-term rental (Airbnb)</option>
       </select>
-      <button type="submit">Check</button>
+      <button type="submit">Search</button>
     </form>
   </div>
 </header>
 
+<div id="dealModal" hidden><div class="sheet"><section id="s-deal"></section></div></div>
+
 <div class="wrap">
   <details id="you" class="panel">
-    <summary>Your numbers <span class="muted">(stay on this device)</span></summary>
+    <summary>Your budget: <b id="budgetTxt">...</b> <span class="muted">(tap to change your numbers)</span></summary>
     <div class="grid-inputs">
       <label>Household income / yr<input data-k="income" type="number" step="1000"></label>
       <label>Other debt payments / mo<input data-k="debts" type="number" step="50"></label>
@@ -82,15 +85,22 @@
   </details>
 
   <p id="status" class="status" role="status"></p>
-  <section id="s-city" hidden></section>
+
+  <section id="v-homes" hidden>
+    <div id="areaStrip"></div>
+    <div id="filters"></div>
+    <div class="split">
+      <div id="mapBox"><div id="map"></div></div>
+      <div id="homeList"></div>
+    </div>
+    <div id="compareWrap"></div>
+    <section id="s-shortlist"></section>
+  </section>
 
   <main id="results" hidden>
+    <div class="back"><button type="button" class="link" id="backHomes">&larr; Back to homes for sale</button></div>
     <section id="s-head"></section>
     <section id="s-summary" class="cards"></section>
-    <section id="s-deal"></section>
-    <section id="s-find"></section>
-    <section id="s-listings"></section>
-    <section id="s-shortlist"></section>
     <h2 class="more-h">More about this zip</h2>
     <nav class="tabs" id="tabs" aria-label="Sections"></nav>
     <details class="group" id="g-cost"><summary>Monthly cost, loans and rates<span class="hint" id="h-cost"></span></summary><section id="s-buying"></section></details>
@@ -110,6 +120,7 @@
 </div>
 
 <script src="vendor/chart.umd.min.js"></script>
+<script src="vendor/maplibre-gl.js"></script>
 <script src="config.js"></script>
 <script src="calc.js"></script>
 <script src="deal.js"></script>

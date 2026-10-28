@@ -202,11 +202,11 @@ const Deal = (() => {
     const used = reads.filter(r => r.w > 0);
     const F = used.length ? used.reduce((a, r) => a + r.value * r.w, 0) / used.reduce((a, r) => a + r.w, 0) : NaN;
 
-    const comp = competition(sold);
+    const comp = ctx.comp || competition(sold);
     const mk = rec.market || {};
     const stl = comp.n >= 8 ? comp.stl : mk.sale_to_list ?? NaN;
     const zipDom = comp.n >= 8 ? comp.dom : mk.dom ?? NaN;
-    const bt = backtest(sold, idx, today);
+    const bt = ctx.bt || backtest(sold, idx, today);      // same for every home in a zip, so callers can pass it in
     const rule = offerRule(L, F, stl, s.daysOnMarket, zipDom, bt.w ?? 0.1, bt.d ?? 0.97, bt.k ?? 1);
     const label = mk.label || (rule.m >= 1 ? "Seller's market" : rule.m < 0.97 ? "Buyer's market" : "Balanced");
     const hot = label === "Seller's market" || rule.m >= 1, soft = label === "Buyer's market" || rule.stale;
@@ -241,6 +241,12 @@ const Deal = (() => {
     };
   }
 
-  return { analyze, LIMITS, groupOf, NON_DISCLOSURE };
+  // The zip-wide parts (how homes sell vs asking, and the replay test), computed once per zip.
+  function zipParts(sold, monthly, yearly) {
+    const s = (sold || []).filter(c => c.sold), today = new Date().toISOString().slice(0, 10);
+    return { comp: competition(s), bt: backtest(s, indexer(monthly, yearly), today) };
+  }
+
+  return { analyze, zipParts, LIMITS, groupOf, NON_DISCLOSURE };
 })();
 if (typeof module !== "undefined") module.exports = Deal;
