@@ -755,7 +755,7 @@
   // Built from every signal the page has (value, market, forecast, budget, schools, crime, hazards,
   // growth, condition, Vaastu, purpose). Plain rules, no paid AI: each sentence says what the data says.
   function ourTake(s, d, o) {
-    const out = [], mode = $("#purpose").value, kind = (LISTING_GROUPS[s.propertyType] || "home").toLowerCase().replace("2-4 unit building", "2-4 unit building");
+    const out = [], mode = $("#purpose").value, kind = { "Condo": "condo", "Apartment": "apartment", "Townhouse": "townhouse", "Single Family": "house", "Manufactured": "manufactured home" }[s.propertyType] || "home";
     const size = s.propertyType === "Multi-Family" ? `2-4 unit building${s.bedrooms ? ` (${s.bedrooms} beds in total)` : ""}` : [s.bedrooms ? `${s.bedrooms}-bed` : "", kind].filter(Boolean).join(" ");
     const m = rec.market || {}, fc = rec.fc?.["1"], fc5 = rec.fc?.["5"], sd = rec.schools?.district, g = rec.growth, hz = rec.hazard;
     // 1. the price
@@ -764,7 +764,7 @@
       : d.gap <= -5 ? `This ${size} is listed ${Math.abs(d.gap).toFixed(0)}% below what similar homes are worth (${k(d.F)}), which is a good start.`
       : d.gap <= 8 ? `This ${size} is priced about right: asking is within a few percent of its value (${k(d.F)}).`
       : `This ${size} is listed ${d.gap.toFixed(0)}% above what similar homes are worth (${k(d.F)}), so there's room to push the price down.`;
-    const mkBit = m.label ? ` It's a ${m.label.toLowerCase()}${m.dom ? ` where homes take about ${Math.round(m.dom)} days to sell` : ""}${d.stale ? `, and this one has sat for ${s.daysOnMarket} days` : ""}.` : "";
+    const mkBit = m.label ? ` It's a ${m.label.toLowerCase().replace(/^balanced$/, "balanced market")}${m.dom ? ` where homes take about ${Math.round(m.dom)} days to sell` : ""}${d.stale ? `, and this one has sat for ${s.daysOnMarket} days` : ""}.` : "";
     out.push(priceBit + mkBit);
     // 2. what it means for you
     const oo = { ...o, hoa: s.hoa || o.hoa || 0 }, mo = Calc.monthly(d.offer, oo), cash = d.offer * (o.downPct + o.closingPct) / 100;
@@ -1422,7 +1422,6 @@
     if (parts.space >= 80) why.push([true, "Roomy for the area"]);
     if (parts.school >= 80) why.push([true, `Schools ${h.p.school}/10`]);
     if (parts.commute >= 80) why.push([true, `${mins} min to work`]);
-    if (parts.vaastu >= 80) why.push([true, "Vaastu-friendly facing"]);
     if (s.hoa > 400) why.push([false, `HOA ${money(s.hoa)}/mo`]);
     if (["high", "very high"].includes(crimeLevel(h.p.crime))) why.push([false, `${crimeLevel(h.p.crime)[0].toUpperCase() + crimeLevel(h.p.crime).slice(1)} crime in the county`]);
     return { d, parts, score, verdict, why: why.slice(0, 3), mins };
@@ -1449,6 +1448,11 @@
         const max = Calc.maxPrice(oz).price;
         homes.push({ s, p, o: oz, max, fits: s.price <= max, pay: Calc.monthly(s.price, oz).total });
       }
+    }
+    const seen = new Set();
+    for (let i = homes.length - 1; i >= 0; i--) {
+      const s = homes[i].s, key = [s.price, s.squareFootage, s.bedrooms, s.bathrooms, (+s.latitude).toFixed(3), (+s.longitude).toFixed(3)].join("|");
+      if (seen.has(key)) homes.splice(i, 1); else seen.add(key);
     }
     const budget = Math.round(Calc.maxPrice(o).price / 5000) * 5000, cap = F.max ?? budget;
     const typeOf = s => LISTING_GROUPS[s.propertyType] || s.propertyType || "Other";
