@@ -470,6 +470,46 @@ def load_jobs():
     return None
 
 
+def load_permits(first=2000):
+    """Census Building Permits Survey: new housing units authorized per county per year.
+    Returns DataFrame (county fips x year). Past years are cached for good; the latest is refreshed monthly."""
+    out = {}
+    for y in range(first, dt.date.today().year):
+        path = RAW / f"bps_co{y}a.txt"
+        fresh = path.exists() and (y < dt.date.today().year - 2 or time.time() - path.stat().st_mtime < 30 * 86400)
+        if not fresh and not OFFLINE:
+            try:
+                r = SESSION.get(f"https://www2.census.gov/econ/bps/County/co{y}a.txt", timeout=120)
+                if r.status_code == 200 and "," in r.text[:200]:
+                    path.write_text(r.text)
+            except requests.RequestException:
+                pass
+        if not path.exists():
+            continue
+        units = {}
+        for line in path.read_text(errors="ignore").splitlines():
+            p = [x.strip() for x in line.split(",")]
+            if len(p) < 17 or not (p[1].isdigit() and p[2].isdigit()):
+                continue                          # header lines
+            try:
+                units[p[1].zfill(2) + p[2].zfill(3)] = sum(float(p[i] or 0) for i in (7, 10, 13, 16))
+            except ValueError:
+                continue
+        if units:
+            out[y] = pd.Series(units)
+    return pd.DataFrame(out) if out else None
+
+
+def growth_rate(years, vals):
+    """Yearly growth rate (%) from a straight-line fit to the log of the values (an exponential fit)."""
+    vals = np.asarray(vals, float)
+    m = np.isfinite(vals) & (vals > 0)
+    if m.sum() < 4:
+        return None
+    slope = np.polyfit(np.asarray(years)[m], np.log(vals[m]), 1)[0]
+    return float((np.exp(slope) - 1) * 100)
+
+
 def load_chr(path):
     """County Health Rankings analytic file -> {county fips: (violent crime per 100k, release year)}."""
     df = pd.read_csv(path, dtype=str, low_memory=False)
@@ -818,6 +858,51 @@ def main():
         log(f"  WARNING: schools skipped: {e!r}")
         log(traceback.format_exc(limit=3))
 
+    # ---------- population, housing and building growth (development)
+    growth = {}
+    try:
+        log("Population and building growth")
+        pops, units = {}, {}
+        for y in range(2012, acs_year + 1):
+            t = load_acs(y, forecast.ACS_MODEL_VARS)
+            if t is not None:
+                t = t.set_index("zip")
+                pops[y], units[y] = t["B01003_001E"], t.get("B25001_001E")
+        P, U = pd.DataFrame(pops), pd.DataFrame({y: v for y, v in units.items() if v is not None})
+        yrs = list(P.columns)
+        rate = {z: growth_rate(yrs, P.loc[z].to_numpy(float)) for z in P.index}
+        urate = {z: growth_rate(list(U.columns), U.loc[z].to_numpy(float)) for z in U.index} if len(U.columns) else {}
+        big = [z for z in P.index if (P.loc[z].iloc[-1] or 0) >= 500 and rate.get(z) is not None]
+        rank = pd.Series({z: rate[z] for z in big}).rank(pct=True) * 100
+        permits = load_permits()
+        cpop = pd.Series({z: P.loc[z].iloc[-1] for z in P.index}).groupby(lambda z: zip_county.get(z, ("",))[0]).sum()
+        pk = pkpct = None
+        if permits is not None:
+            last3 = permits[sorted(permits.columns)[-3:]].mean(axis=1)
+            pk = (last3 / cpop.reindex(last3.index) * 1000).replace([np.inf, -np.inf], np.nan).where(lambda x: x < 200)
+            pkpct = pk.rank(pct=True) * 100
+            asof["permits"] = int(max(permits.columns))
+            log(f"  permits: US total {int(permits[max(permits.columns)].sum()):,} units in {max(permits.columns)} (expect ~1.4M)")
+        for z in P.index:
+            g = {"start": yrs[0], "pop": [None if pd.isna(v) else int(v) for v in P.loc[z]], "rate": rate.get(z)}
+            if z in U.index:
+                g["units"] = [None if pd.isna(v) else int(v) for v in U.loc[z]]
+                g["urate"] = urate.get(z)
+            if z in rank.index:
+                g["pct"] = round(float(rank[z]))
+            c = zip_county.get(z, ("",))[0]
+            if permits is not None and c in permits.index:
+                row = permits.loc[c]
+                g["permits"] = {"start": int(permits.columns[0]), "v": [None if pd.isna(v) else int(v) for v in row]}
+                if pk is not None and pd.notna(pk.get(c)):
+                    g["pk"], g["pkpct"] = round(float(pk[c]), 1), round(float(pkpct[c]))
+            growth[z] = g
+        asof["population"] = f"ACS 5-year {yrs[0]}-{yrs[-1]}"
+        log(f"  growth for {len(growth)} zips; permits {'loaded' if permits is not None else 'missing'}")
+    except Exception as e:  # noqa: BLE001
+        log(f"  WARNING: growth skipped: {e!r}")
+        log(traceback.format_exc(limit=3))
+
     # ---------- machine-learning forecast (skipped with a warning if anything goes wrong)
     fc, bt = {}, {}
     try:
@@ -942,10 +1027,14 @@ def main():
                     dg = dgrades.loc[lea]
                     main = {"name": schools[schools["leaid"] == lea]["lea_name"].iloc[0], "grade": str(dg["grade"]),
                             "pct": float(dg["pct"]), "spct": float(dg["spct"]), "n10": int(dg["n10"]), "s10": int(dg["s10"]),
+                            "g10": int(dg["g10"]) if pd.notna(dg.get("g10")) else None,
+                            "gs10": int(dg["gs10"]) if pd.notna(dg.get("gs10")) else None,
                             "year": int(dg["year"]) if pd.notna(dg["year"]) else None}
             rec["schools"] = {"district": main, "list": rows_}
         if z in gent:
             rec["gent"] = gent[z]
+        if z in growth:
+            rec["growth"] = growth[z]
         fips = rec.get("county_fips")
         if z in fc:
             rec["fc"] = fc[z]

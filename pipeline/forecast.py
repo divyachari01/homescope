@@ -26,7 +26,7 @@ ACS_LAG = 2                # ACS 5-year data for year y comes out at the end of 
 ACS_MODEL_VARS = ["B01003_001E", "B19013_001E", "B25077_001E", "B25064_001E", "B25003_001E",
                   "B25003_003E", "B25004_002E", "B17001_001E", "B17001_002E", "B23025_003E",
                   "B23025_005E", "B15003_001E", "B15003_022E", "B15003_023E", "B15003_024E",
-                  "B15003_025E"]
+                  "B15003_025E", "B25001_001E"]
 
 LABELS = {
     "growth_1y": "Price change last year", "growth_3y": "Price trend, 3 yrs", "growth_5y": "Price trend, 5 yrs",
@@ -39,7 +39,7 @@ LABELS = {
     "hazard_risk": "Natural hazard risk", "hazard_loss": "Expected hazard losses", "stocks_5y": "Stock market, 5-yr trend", "college": "College-educated share",
     "college_change": "Change in college share", "poverty": "Poverty rate", "unemployment": "Unemployment",
     "renter_share": "Share of renters", "rent_vacancy": "Empty rentals", "log_pop": "Population",
-    "pop_growth": "Population growth", "rate": "Mortgage rate", "rate_change_1y": "Rate change, 1 yr",
+    "pop_growth": "Population growth", "units_growth": "New homes built (housing growth)", "rate": "Mortgage rate", "rate_change_1y": "Rate change, 1 yr",
     "rate_change_3y": "Rate change, 3 yrs", "us_growth_1y": "US price trend", "crime": "Violent crime (county)",
     "vote_margin": "Political lean (R minus D)", "vote_shift": "Political shift, 8 yrs",
     "rent_control": "Rent control rules", "just_cause": "Just-cause eviction rule",
@@ -96,6 +96,8 @@ def features(P, y, acs, macro, votes, static, market):
             f["income_growth"] = a["B19013_001E"] / a5["B19013_001E"] - 1
             f["rent_growth"] = a["B25064_001E"] / a5["B25064_001E"] - 1
             f["pop_growth"] = a["B01003_001E"] / a5["B01003_001E"] - 1
+            if "B25001_001E" in a and "B25001_001E" in a5:
+                f["units_growth"] = a["B25001_001E"] / a5["B25001_001E"] - 1
             f["college_change"] = coll - (a5["B15003_022E"] + a5["B15003_023E"] + a5["B15003_024E"]
                                           + a5["B15003_025E"]) / a5["B15003_001E"]
 

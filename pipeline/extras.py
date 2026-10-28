@@ -298,6 +298,16 @@ def district_grades(seda_csv):
         last = None
     g = df.groupby(idc).agg(score=(val, "mean"), name=(namec, "first") if namec else (val, "size"))
     g = g.dropna(subset=["score"])
+    # Progress: how scores change from lower to higher grades in the same year. On this scale 0 means
+    # "keeps pace with the national average", so a positive slope means students gain ground as they go.
+    gradec = next((c for c in cols if c in ("grade", "grd")), None)
+    if gradec:
+        byg = df.assign(_g=pd.to_numeric(df[gradec], errors="coerce")).groupby([idc, "_g"])[val].mean().reset_index()
+
+        def slope(t):
+            t = t.dropna()
+            return np.polyfit(t["_g"], t[val], 1)[0] if t["_g"].nunique() >= 3 else np.nan
+        g["growth"] = byg.groupby(idc)[["_g", val]].apply(slope).reindex(g.index)
     g["pct"] = (g["score"].rank(pct=True) * 100).round(0)
     g["grade"] = pd.cut(g["pct"], [-1, 20, 40, 60, 80, 101], labels=["F", "D", "C", "B", "A"]).astype(str)
     g.index = g.index.astype(str).str.zfill(7)
@@ -306,6 +316,11 @@ def district_grades(seda_csv):
     g["spct"] = (g.groupby(g.index.str[:2])["score"].rank(pct=True) * 100).round(0)
     g["n10"] = np.clip(np.ceil(g["pct"] / 10), 1, 10).astype(int)
     g["s10"] = np.clip(np.ceil(g["spct"] / 10), 1, 10).astype(int)
+    if "growth" in g:
+        gp = g["growth"].rank(pct=True) * 100
+        sp = g.groupby(g.index.str[:2])["growth"].rank(pct=True) * 100
+        g["g10"] = np.clip(np.ceil(gp / 10), 1, 10)
+        g["gs10"] = np.clip(np.ceil(sp / 10), 1, 10)
     g["year"] = last
     return g
 

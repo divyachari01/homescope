@@ -243,6 +243,7 @@
     renderPurpose(o);
     renderHood();
     renderHazards(o);
+    renderGrowth();
     renderLaw();
     renderSun();
     renderListings(o);
@@ -257,6 +258,8 @@
     if (rec.market?.label) bits.push(`${rec.market.label.replace(/^Balanced$/, "Balanced market")}${rec.market.dom ? `, homes take about ${Math.round(rec.market.dom)} days to sell` : ""}.`);
     const risks = (rec.hazard?.top || []).filter(([, , lab]) => /very high|relatively high/i.test(lab || "")).slice(0, 2).map(([n]) => n.toLowerCase());
     if (risks.length) bits.push(`Main natural risks: ${risks.join(" and ")}.`);
+    const gr = rec.growth;
+    if (gr?.rate != null && (gr.pct >= 80 || gr.rate < -0.3)) bits.push(gr.rate < 0 ? `Population is shrinking (${signed(gr.rate)}/yr).` : `Population is growing fast (${signed(gr.rate)}/yr).`);
     $("#s-head").innerHTML = `<h2>${zip}${place ? " &middot; " + esc(place) : ""}</h2>
       <div class="asof">${rec.metro ? esc(rec.metro) + " metro &middot; " : ""}Each section notes how recent its data is.</div>
       ${bits.length ? `<p class="bottom">${bits.join(" ")}</p>` : ""}`;
@@ -291,7 +294,9 @@
     if (fc1) out.push(card("Price outlook, next year", signed(fc1[1]), `likely; range ${signed(fc1[0])} to ${signed(fc1[2])} (model forecast)`));
     if (rec.hazard?.label) out.push(card("Natural hazard risk", rec.hazard.label, (rec.hazard.top || []).slice(0, 2).map(([n]) => esc(n)).join(", ")));
     const sd = rec.schools?.district;
-    if (sd) out.push(card("School district", sd.n10 ? `${sd.n10}/10` : `Grade ${sd.grade}`, `${esc(sd.name)}${sd.s10 ? `: ${sd.n10}/10 nationally, ${sd.s10}/10 in ${esc(rec.state)}` : ""}`));
+    if (sd) out.push(card("School district", sd.n10 ? `${sd.n10}/10` : `Grade ${sd.grade}`, `${esc(sd.name)}${sd.s10 ? `: test scores ${sd.n10}/10 US, ${sd.s10}/10 ${esc(rec.state)}` : ""}${sd.g10 ? `; progress ${sd.g10}/10 US, ${sd.gs10}/10 ${esc(rec.state)}` : ""}`));
+    const gr = rec.growth;
+    if (gr?.rate != null) out.push(card("Population growth", `${signed(gr.rate)}/yr`, `${gr.pct != null ? `faster than ${gr.pct}% of US zips` : ""}${gr.pk != null ? ` &middot; county permits ${gr.pk} new homes per 1,000 people a year` : ""}`));
     const rent = typicalRent(), rs = rentSource();
     if (rent) out.push(card("Typical rent", money(rent) + "/mo", rs));
     if (ind.price_to_income) more.push(card("Price to income", ind.price_to_income.toFixed(1) + "x",
@@ -1045,6 +1050,36 @@
       <p class="note">Average of the ${r.n} zip${r.n === 1 ? "" : "s"} whose centre is within 5 miles, weighted by population. Crime is only published by county and police force, so it differs here only when nearby zips are in another county.</p>`;
   }
 
+  // ---------------------------------------------------------------- population growth and building
+  function renderGrowth() {
+    const g = rec.growth, el = $("#s-growth");
+    if (!g) { el.innerHTML = ""; hint("h-growth", ""); return; }
+    const years = g.pop.map((_, i) => g.start + i), last = g.pop[g.pop.length - 1], r = g.rate;
+    const label = r == null ? "n/a" : r < -0.3 ? "Shrinking" : g.pct >= 80 ? "Growing fast" : r > 0.3 ? "Growing" : "Steady";
+    const dbl = r > 0.5 ? Math.log(2) / Math.log(1 + r / 100) : null;
+    const proj = t => last && r != null ? last * Math.pow(1 + r / 100, t) : null;
+    hint("h-growth", `${label}${r != null ? `: population ${signed(r)}/yr` : ""}`);
+    el.innerHTML = `<h2>Growth and development: ${label}</h2>
+      <div class="asof">Census ACS 5-year estimates ${years[0]}-${years[years.length - 1]} (each is a 5-year average, so the line is smoothed)${g.permits ? `; new homes permitted in ${esc(rec.county || "the county")}, Census Building Permits Survey through ${NAT.asof.permits || ""}` : ""}</div>
+      <div class="chart"><canvas id="cPop"></canvas></div>
+      <table>
+        <tr><td>Population now</td><td>${last ? Math.round(last).toLocaleString() : "n/a"}</td></tr>
+        <tr><td>Growth per year (exponential fit)</td><td>${signed(r)}${g.pct != null ? ` <span class="note">(faster than ${g.pct}% of zips)</span>` : ""}</td></tr>
+        ${dbl && dbl < 100 ? `<tr><td>Population doubles in</td><td>about ${Math.round(dbl)} years</td></tr>` : ""}
+        ${g.urate != null ? `<tr><td>Homes (housing units) growth per year</td><td>${signed(g.urate)}</td></tr>` : ""}
+        ${g.pk != null ? `<tr><td>New homes permitted per 1,000 people a year (county, last 3 years)</td><td>${g.pk}${g.pkpct != null ? ` <span class="note">(more than ${g.pkpct}% of counties)</span>` : ""}</td></tr>` : ""}
+        ${r != null ? `<tr><td>If the trend continues: population in 5 / 10 years</td><td>${Math.round(proj(5)).toLocaleString()} / ${Math.round(proj(10)).toLocaleString()}</td></tr>` : ""}
+      </table>
+      ${g.permits ? `<h3>New homes permitted each year (county)</h3><div class="chart"><canvas id="cPermits"></canvas></div>` : ""}
+      <p class="note">Fast growth usually means rising demand and more building nearby (traffic, construction, new shops). Homes growing faster than people can mean more supply and softer prices.</p>`;
+    makeChart("cPop", { type: "line", data: { labels: years, datasets: [
+      { label: "Population", data: g.pop, borderColor: css("--c1"), pointRadius: 2, borderWidth: 2 },
+      ...(g.units ? [{ label: "Housing units", data: g.units, borderColor: css("--c2"), pointRadius: 2, borderWidth: 2 }] : [])] },
+      options: { scales: { y: { ticks: { callback: v => Math.round(v).toLocaleString() } } } } });
+    if (g.permits) makeChart("cPermits", { type: "bar", data: { labels: g.permits.v.map((_, i) => g.permits.start + i),
+      datasets: [{ label: "New homes permitted", data: g.permits.v, backgroundColor: css("--c3") }] }, options: { plugins: { legend: { display: false } } } });
+  }
+
   // ---------------------------------------------------------------- natural hazards and the building
   function ageFlags(year) {
     if (!year) return [];
@@ -1268,22 +1303,23 @@
     if (!sc) { $("#s-schools").innerHTML = `<h2>Schools</h2><p class="note">No school data for this zip. <a href="${nces}" target="_blank" rel="noopener">Public schools within 5 miles (NCES)</a>.</p>`; return; }
     const d = sc.district;
     const gradeTag = g => !g ? "" : `<span class="${g >= 6 ? "pill" : "pill warn"}">${g}/10</span>`;
-    hint("h-schools", d ? `${esc(d.name)}: ${d.n10 ?? "?"}/10 nationally${d.s10 ? `, ${d.s10}/10 in ${esc(rec.state)}` : ""}` : "");
+    hint("h-schools", d ? `${esc(d.name)}: scores ${d.n10 ?? "?"}/10 US, ${d.s10 ?? "?"}/10 ${esc(rec.state)}${d.g10 ? `; progress ${d.g10}/10 US, ${d.gs10}/10 ${esc(rec.state)}` : ""}` : "");
     $("#s-schools").innerHTML = `<h2>Schools</h2>
       ${d ? `<p class="verdict">School district: <b>${esc(d.name)}</b> ${gradeTag(d.n10)} nationally${d.s10 ? `, ${gradeTag(d.s10)} within ${esc(rec.state)}` : ""}
-        <span class="note">test scores higher than ${Math.round(d.pct)}% of US districts${d.spct != null ? ` and ${Math.round(d.spct)}% of ${esc(rec.state)} districts` : ""}${d.year ? ` (${d.year})` : ""}</span></p>` : ""}
+        <span class="note">test scores higher than ${Math.round(d.pct)}% of US districts${d.spct != null ? ` and ${Math.round(d.spct)}% of ${esc(rec.state)} districts` : ""}${d.year ? ` (${d.year})` : ""}</span></p>
+      ${d.g10 ? `<p class="verdict">Student progress: ${gradeTag(d.g10)} nationally, ${gradeTag(d.gs10)} within ${esc(rec.state)} <span class="note">how much students gain from grade to grade compared with the national average</span></p>` : ""}` : ""}
       <div class="table-wrap"><table><tr><th>Nearest public schools</th><th>Level</th><th>Miles</th><th>Students</th><th>Per teacher</th><th>Math</th><th>Reading</th><th>District score</th></tr>
         ${sc.list.map(x => `<tr><td>${esc(x.name || "")}${x.charter ? " <span class=\"note\">(charter)</span>" : ""}</td><td>${x.level || ""}</td><td>${x.mi}</td>
           <td>${x.enroll ?? ""}</td><td>${x.ratio ?? ""}</td><td>${x.math != null ? pct(x.math, 0) : ""}</td><td>${x.read != null ? pct(x.read, 0) : ""}</td><td>${gradeTag(x.d10)}</td></tr>`).join("")}
       </table></div>
-      <p class="note">Scores rank average test results (Stanford SEDA 2025.1): 10/10 = top 10%. GreatSchools also counts student progress, so its ratings can differ. Math and reading: share proficient on the state test (2018-19). Check which school an address is zoned for with the district. More: <a href="${nces}" target="_blank" rel="noopener">NCES school search</a>.</p>`;
+      <p class="note">Scores rank average test results (Stanford SEDA 2025.1): 10/10 = top 10%. Progress ranks how scores rise from grade 3 to 8. GreatSchools mixes these and more, so its ratings can differ. Math and reading: share proficient on the state test (2018-19). Check which school an address is zoned for with the district. More: <a href="${nces}" target="_blank" rel="noopener">NCES school search</a>.</p>`;
   }
 
 
   function renderSources() {
     const a = NAT.asof || {};
     $("#sources").innerHTML = `Data rebuilt ${NAT.built}. Sources: Freddie Mac mortgage rates (${a.rates || ""}), Federal Reserve Bank of New York, Zillow Research (${a.zillow_values || ""}),
-      FHFA house price index (through ${a.fhfa || ""}), US Census Bureau ACS (${a.acs || ""}; this product uses the Census Bureau Data API but is not endorsed or certified by the Census Bureau), BLS, FEMA National Risk Index,
+      FHFA house price index (through ${a.fhfa || ""}), Census Building Permits Survey, US Census Bureau ACS (${a.acs || ""}; this product uses the Census Bureau Data API but is not endorsed or certified by the Census Bureau), BLS, FEMA National Risk Index,
       ${a.market_source || "Realtor.com"} Economic Research, County Health Rankings &amp; Roadmaps, MIT Election Data and Science Lab, Stanford Education Data Archive, Urban Institute Education Data Portal, NAIC,
       street, place and routing data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL) via Overpass, Nominatim and OSRM, county jobs from Census County Business Patterns, listings, recent sales and value estimates (Quantarium, Collateral Analytics, Cotality) from Realtor.com.
       <br>&copy; 2026 Divya Chari. Code licensed under <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/" target="_blank" rel="noopener">PolyForm Noncommercial 1.0.0</a>; see the project's NOTICE for third-party terms.

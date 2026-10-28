@@ -179,6 +179,8 @@ def main():
             continue
         print(f"{z}: {len(data['sale'])} for sale, {len(data['rent'])} for rent ({data['source']})")
         add_facing(data)
+        for x in data["sale"] + data["rent"]:
+            x.pop("text", None)                  # descriptions are read live only, never saved
         path.write_text(json.dumps(data, separators=(",", ":")))
     # drop zips that were removed from the watchlist
     for p in OUT.glob("*.json"):
