@@ -4,7 +4,6 @@ Zillow
 FHFA
 Census
   ACS 2025 not available: HTTP 404, reply: '<!doctype html><html lang="en"><head><title>HTTP Status 404 ? Not Found</title><style type="text/css">
-  downloaded ACS 2024
 Crime and elections
   crime measure used: Homicides raw value
   WARNING: elections download failed: 400 Client Error: Bad Request for url: https://dataverse.harvard.edu/api/access/datafile/13573089
@@ -13,8 +12,7 @@ Computing indicators
 Extra data
   WARNING: skipping nri: 403 Client Error: Forbidden for url: https://www.fema.gov:443/emergency-managers/practitioners/resilience-analysis-and-planning-tool
   WARNING: skipping redfin: 403 Client Error: Forbidden for url: https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_market_tracker/zip_code_market_tracker.tsv000.gz
-  downloaded seda
-  WARNING: schools skipped: StopIteration()
+  schools: 102274 in directory
 Forecast model
 /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
   result = getattr(ufunc, method)(*inputs, **kwargs)
@@ -56,4 +54,4 @@ Forecast model
   5-yr test 2020->2025: model off by 4.17 pts/yr, trend-only off by 5.29, actual inside range 19.9%
   5-yr test 2021->2026: model off by 2.65 pts/yr, trend-only off by 3.48, actual inside range 42.9%
 Writing zip files
-Done: 33785 zip codes in 894 files. Sources as of: {'rates': '2026-10-22', 'zillow_values': '2026-09', 'zillow_rents': '2026-09', 'zillow_forecast_base': '2026-09-30', 'fhfa': 2025, 'acs': '2020-2024', 'acs_old': '2010-2014', 'crime': 'County Health Rankings 2025, homicides', 'elections': 2024, 'hazards': 'FEMA National Risk Index', 'market': '2026-09', 'market_source': 'Realtor.com', 'fed': '2026-10', 'jobs': 'County Business Patterns 2023'}
+Done: 33785 zip codes in 894 files. Sources as of: {'rates': '2026-10-22', 'zillow_values': '2026-09', 'zillow_rents': '2026-09', 'zillow_forecast_base': '2026-09-30', 'fhfa': 2025, 'acs': '2020-2024', 'acs_old': '2010-2014', 'crime': 'County Health Rankings 2025, homicides', 'elections': 2024, 'hazards': 'FEMA National Risk Index', 'market': '2026-09', 'market_source': 'Realtor.com', 'fed': '2026-10', 'jobs': 'County Business Patterns 2023', 'schools': 'SEDA 2025.1 (2025)'}
