@@ -54,4 +54,5 @@ Forecast model
   5-yr test 2020->2025: model off by 4.17 pts/yr, trend-only off by 5.29, actual inside range 19.9%
   5-yr test 2021->2026: model off by 2.65 pts/yr, trend-only off by 3.48, actual inside range 42.9%
 Writing zip files
+  search pages: 33834 addresses in the sitemap
 Done: 33785 zip codes in 894 files. Sources as of: {'rates': '2026-10-22', 'zillow_values': '2026-09', 'zillow_rents': '2026-09', 'zillow_forecast_base': '2026-09-30', 'fhfa': 2025, 'acs': '2020-2024', 'acs_old': '2010-2014', 'crime': 'County Health Rankings 2025, homicides', 'elections': 2024, 'hazards': 'FEMA National Risk Index', 'market': '2026-09', 'market_source': 'Realtor.com', 'fed': '2026-10', 'jobs': 'County Business Patterns 2023', 'schools': 'SEDA 2025.1 (2025)'}
