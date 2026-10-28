@@ -1491,8 +1491,10 @@
     }
     const types = ["All", ...new Set(homes.map(h => LISTING_GROUPS[h.s.propertyType] || h.s.propertyType || "Other"))];
     const cap = cityF.max ?? Math.round(Calc.maxPrice(o).price / 5000) * 5000;
-    const shown = homes.filter(h => h.s.price <= cap && (h.s.bedrooms ?? 0) >= cityF.beds && (h.s.bathrooms ?? 0) >= cityF.baths
-      && (!cityF.sqft || (h.s.squareFootage ?? 0) >= cityF.sqft) && (cityF.type === "All" || (LISTING_GROUPS[h.s.propertyType] || h.s.propertyType) === cityF.type));
+    const passes = h => (h.s.bedrooms ?? 0) >= cityF.beds && (h.s.bathrooms ?? 0) >= cityF.baths
+      && (!cityF.sqft || (h.s.squareFootage ?? 0) >= cityF.sqft) && (cityF.type === "All" || (LISTING_GROUPS[h.s.propertyType] || h.s.propertyType) === cityF.type);
+    let shown = homes.filter(h => h.s.price <= cap && passes(h)), noneInBudget = false;
+    if (!shown.length && cityF.max == null && homes.length) { shown = homes.filter(passes); noneInBudget = true; }
     // overall score among what's shown
     const spaceR = rankPct(shown.map(h => h.s.squareFootage)), valueR = rankPct(shown.map(h => h.s.estimate ? h.s.estimate / h.s.price : NaN)),
       schoolOf = h => h.zipRec.school ? h.zipRec.school * 10 : null;
@@ -1519,7 +1521,7 @@
     }
     const sorters = { best: (a, b) => (b.fits - a.fits) || ((b.score ?? -1) - (a.score ?? -1)), low: (a, b) => a.s.price - b.s.price,
       high: (a, b) => b.s.price - a.s.price, new: (a, b) => (a.s.daysOnMarket ?? 1e9) - (b.s.daysOnMarket ?? 1e9), big: (a, b) => (b.s.squareFootage || 0) - (a.s.squareFootage || 0) };
-    shown.sort(sorters[cityF.sort] || sorters.best);
+    shown.sort(noneInBudget && cityF.sort === "best" ? sorters.low : sorters[cityF.sort] || sorters.best);
     const sel = (id, opts, v) => `<select id="${id}">${opts.map(([val, lab]) => `<option value="${val}" ${String(val) === String(v) ? "selected" : ""}>${lab}</option>`).join("")}</select>`;
     el.innerHTML = `<div class="note">${loading ? `Loading listings for ${loading} more zip code${loading > 1 ? "s" : ""} (5-30 seconds each the first time)... ` : ""}${homes.length} homes for sale in ${zs.length} zip code${zs.length > 1 ? "s" : ""}.</div>
       <div class="row" style="margin:8px 0">
@@ -1532,7 +1534,7 @@
         <label class="note"><input type="checkbox" id="cfNear" ${cityF.nearby ? "checked" : ""}> Include nearby towns</label>
       </div>
       ${factorChips(LFACT, lOn, "cfFact")}
-      <p class="verdict"><b>${shown.length}</b> home${shown.length === 1 ? "" : "s"} match. ${shown.length ? "Best matches first." : "Try a higher price or fewer filters."}</p>
+      <p class="verdict">${noneInBudget ? `Nothing here is within your budget (${k(cap)}). Showing the cheapest homes instead.` : `<b>${shown.length}</b> home${shown.length === 1 ? "" : "s"} match. ${shown.length ? "Best matches first." : "Try a higher price or fewer filters."}`}</p>
       <div class="listings">${shown.slice(0, cityF.shown).map(h => {
         const s = h.s, id = esc(s.id || s.formattedAddress);
         return `<div class="listing">
