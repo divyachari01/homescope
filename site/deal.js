@@ -212,7 +212,9 @@ const Deal = (() => {
     const hot = label === "Seller's market" || rule.m >= 1, soft = label === "Buyer's market" || rule.stale;
     if (!hot) rule.offer = Math.min(rule.offer, L);       // outside a seller's market, don't plan to pay over asking
     const opening = Math.min(rule.offer * (hot ? 1 : soft ? 0.97 : 0.985), hot ? Infinity : L * 0.99);
-    const walk = Math.min(Math.max(rule.offer, Number.isFinite(F) ? F : 0) * 1.03, ctx.maxPrice || Infinity);
+    const valueWalk = Math.max(rule.offer, Number.isFinite(F) ? F : 0) * 1.03;
+    // Your budget caps it, unless even the expected price is over budget (then that's flagged instead).
+    const walk = ctx.maxPrice && ctx.maxPrice < valueWalk && ctx.maxPrice >= rule.offer ? ctx.maxPrice : valueWalk;
     const gap = Number.isFinite(F) ? (L / F - 1) * 100 : NaN;
 
     // Taxes, land, building
@@ -229,7 +231,7 @@ const Deal = (() => {
       && !/:\s*(?:no|none|0)$/i.test(t));
     return {
       L, F, gap, reads, comps: cs, comp, stl: rule.m, zipDom, stale: rule.stale, label, hot, soft,
-      offer: rule.offer, opening, walk, overBudget: ctx.maxPrice && walk < rule.offer, maxPrice: ctx.maxPrice,
+      offer: rule.offer, opening, walk, overBudget: ctx.maxPrice && ctx.maxPrice < rule.offer, maxPrice: ctx.maxPrice,
       flip, lastIdx, taxNow, taxAfter, taxTrend, landShare, landValue: landShare && Number.isFinite(F) ? landShare * F : null,
       good: scan(text, GOOD), bad: scan(text, BAD), build: scan(text, BUILD), facts: [...new Set(facts)].slice(0, 12),
       views7: s.views7, saves7: s.saves7,

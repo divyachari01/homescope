@@ -106,7 +106,7 @@
     if (liveState.get(z) === "loading") return;
     liveState.set(z, "loading");
     try {
-      const r = await fetch(`${API}/api/listings?zip=${z}`);
+      const r = await fetch(`${API}/api/listings?zip=${z}&v=2`);
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || r.status);
       liveCache.set(z, j); liveState.delete(z);
@@ -414,7 +414,7 @@
       <h2>Rates, buying power and monthly cost</h2>
       <div class="asof">Freddie Mac 30-year average rate since 1971, latest ${NAT.rate30_latest.date}: ${NAT.rate30_latest.value}%${NAT.fed ? `. Fed funds rate (New York Fed) since 2000, latest ${NAT.asof.fed}: ${NAT.fed.v[NAT.fed.v.length - 1]}%. Mortgage rates follow the Fed's rate loosely, through longer-term bond yields` : ""}</div>
       <div class="chart"><canvas id="cRates"></canvas></div>
-      <p class="note">Over any 12 months since 1971, the 30-year rate moved by a full point or more ${pct(moves.shareOver1pt, 0)} of the time. In 8 of 10 such years the change was between ${signed(moves.p10, 1).replace("%", "")} and ${signed(moves.p90, 1).replace("%", "")} points.</p>
+      <p class="note">Since 1971, rates moved a full point or more within a year ${pct(moves.shareOver1pt, 0)} of the time.</p>
       <div class="two">
         <div>
           <h3>If rates move</h3>
@@ -441,9 +441,7 @@
             ${utilities() ? `<tr><td>Utilities: electric ${money(rec.util.electric || 0)} + gas ${money(rec.util.gas || 0)} (zip average)</td><td>${money(utilities())}</td></tr>` : ""}
             <tr><td><b>All-in per month</b></td><td><b>${money(m.total + tp * o.maintRate / 1200 + utilities())}</b></td></tr>
           </table>
-          <p class="note">Property tax is about ${money(m.tax * 12)} a year. The rate ${rec.acs?.tax_rate && !Number(document.querySelector('[data-k="taxRate"]').value) ? "is what owners in this zip actually pay vs their home values (Census), so state, county and city taxes and local assessment practice are all included" : "is your setting"}.
-          ${o.hoaAuto && o.hoa ? ` HOA is the typical condo fee in this zip's current listings.` : ""}${o.hoaAuto && !o.hoa && target.type === "condo" ? " Condo HOA fees aren't known for this zip; enter one under More assumptions." : ""}
-          Water and trash aren't included (no national data).</p>
+          <p class="note">Tax rate is what owners here actually pay (Census).${o.hoaAuto && o.hoa ? " HOA is the typical condo fee in current listings." : ""}${o.hoaAuto && !o.hoa && target.type === "condo" ? " Condo HOA unknown here; add it under More assumptions." : ""} Water and trash not included.</p>
         </div>
       </div>`;
     const start = NAT.rate30.start.split("-").map(Number);
@@ -511,7 +509,7 @@
         <tr><td>Keep renting</td><td colspan="6" class="muted" style="text-align:left">Rent ${money(o.rent0)}/mo, rising with typical rent growth, savings invested</td>
           <td>${k(rentOnly.low.netWorth)}</td><td>${k(rentOnly.mid.netWorth)}</td><td>${k(rentOnly.high.netWorth)}</td></tr>
       </table></div>
-      <p class="note">${fc ? `Low / likely / high use the model's 5-year forecast: ${signed(scen.low * 100)}, ${signed(scen.mid * 100)}, ${signed(scen.high * 100)} a year, carried on after year 5. ` : ""}How it works: each plan spends the same each month (your rent now plus what you save). Whatever isn't spent on housing earns ${o.invReturn}%/yr. Rates drift by your "rate change over next 5 years" setting (${o.rateShift >= 0 ? "+" : ""}${o.rateShift} pts). Net worth counts savings plus home equity after ${o.sellPct}% selling costs. Rent grows ${o.rentGrowth.toFixed(1)}%/yr.</p>`;
+      <p class="note">Each plan spends the same each month (your rent plus savings); money not spent on housing earns ${o.invReturn}%/yr. Net worth = savings + home equity after ${o.sellPct}% selling costs. Rent grows ${o.rentGrowth.toFixed(1)}%/yr.</p>`;
     // fan chart: last 15 years of history + 10 years of range
     const lastI = hist.vals.length - 1, startI = Math.max(0, lastI - 15);
     const labels = [], hv = [], lo = [], mi = [], hi = [];
@@ -550,9 +548,9 @@
     return `<div class="asof">Machine-learning model trained on every US zip from ${M.first_origin || 2014} on. It learns how price growth depends on price trends, rates, the stock market, income, rents, jobs, education, renters, crime, politics, landlord law and insurance.</div>
       <div class="chart"><canvas id="cOutlook"></canvas></div>
       <div class="table-wrap"><table><tr><th>Forecast for</th><th>Low</th><th>Likely</th><th>High</th><th>Typical value then</th></tr>${rows}</table></div>
-      <p class="note">Low and high are set so that about 8 in 10 outcomes should land between them. The model's raw ranges were too narrow in past tests (especially through the 2020-2022 boom), so they were widened by ${["1", "3", "5"].map(h => M.horizons?.[h]?.widened_pts != null ? `${M.horizons[h].widened_pts} pts (${h} yr)` : "").filter(Boolean).join(", ")} to match how far real outcomes strayed.</p>
+      <p class="note">About 8 in 10 outcomes should land between low and high (ranges widened to match past misses).</p>
       <details class="sub"><summary>How well did it predict 2022 to ${yr}?</summary>
-        <p class="note">Each row pretends it's the start year, trains only on what was known then, predicts, and compares with what actually happened across all zips. Error is the average miss in percentage points per year. "Trend only" just extends each zip's own 10-year trend. "Inside range" is for the model's raw range, before the widening above.
+        <p class="note">Each row trains only on data known at the start year, then compares with what happened. Error = average miss, points per year. "Trend only" extends each zip's 10-year trend.
         ${beat.length ? `The model beat the trend-only guess in ${wins} of ${beat.length} completed tests.` : ""}</p>
         <div class="table-wrap"><table><tr><th>Period</th><th>Horizon</th><th>Model error</th><th>Trend-only error</th><th>Inside range</th></tr>${bt}</table></div>
         ${mine ? `<h3>This zip, 1 year ahead</h3><div class="table-wrap"><table><tr><th>Year</th><th>Predicted range</th><th>Likely</th><th>Actual</th><th>Inside?</th></tr>${mine}</table></div>` : ""}
@@ -691,8 +689,7 @@
         <tr><td>Notice before filing eviction for unpaid rent</td><td>${days ? days + " days" : "None or immediate"}</td></tr>
         ${law.notes ? `<tr><td colspan="2" style="text-align:left;white-space:normal" class="note">${esc(law.notes)}</td></tr>` : ""}
       </table>
-      <p class="note">How the label is set: tenant-leaning if the state has rent control or just-cause eviction rules (plus long notice periods); landlord-leaning if cities are banned from rent control, there's no just-cause rule and the unpaid-rent notice is 5 days or less. Cities can add their own rules where the state allows.
-      Full state eviction-law profile: <a href="https://lawatlas.org/datasets/state-eviction-laws" target="_blank" rel="noopener">LSC / LawAtlas eviction laws database</a>.</p>`;
+      <p class="note">Cities can add their own rules. Full details: <a href="https://lawatlas.org/datasets/state-eviction-laws" target="_blank" rel="noopener">LSC / LawAtlas eviction laws database</a>.</p>`;
     if (st.votes || rec.votes) {
       const years = (st.votes || rec.votes).years;
       const margin = v => v ? years.map(y => { const i = v.years.indexOf(y); return i < 0 ? null : +(v.rep[i] - v.dem[i]).toFixed(1); }) : null;
@@ -813,7 +810,7 @@
         <button type="button" class="link" data-short="${esc(r.s.id || r.s.formattedAddress)}">${shortlist[r.s.id || r.s.formattedAddress] ? "&#9733; Shortlisted (tap to remove)" : "&#9734; Shortlist for full Vaastu check"}</button>
       </div>`).join("")}</div>
       ${rows.length > 60 ? `<p class="note">Showing 60 of ${rows.length}.</p>` : ""}
-      <p class="note">Facing is estimated as the direction from the house to its nearest street, so check corner lots and long driveways on the satellite view. The Vaastu % on each card uses only what's known from the map (facing and streets); shortlist a home to add its rooms for the full score.</p>
+      <p class="note">Facing = direction to the nearest street; check corner lots on the satellite view. Shortlist a home to add its rooms for the full Vaastu score.</p>
       ${beds ? `<h3>Rentals listed now</h3><table><tr><th>Size</th><th>Listings</th><th>Median rent</th></tr>${beds}</table>` : ""}`;
     el.querySelectorAll("#chips button").forEach(b => b.onclick = () => { listFilter = b.dataset.g; renderListings(inputs()); });
     $("#listSort").onchange = e => { listSort = e.target.value; renderListings(inputs()); };
@@ -857,7 +854,7 @@
     if (!API) { $("#s-find").innerHTML = ""; return; }
     if ($("#findForm")) return;                       // keep what's typed
     $("#s-find").innerHTML = `<h2>Check a house you found</h2>
-      <p class="note">Paste its address or a Realtor.com, Zillow or Redfin link for a deal check: fair price, what to offer, history, taxes, condition, risks and loan options. Or tap "Deal check" on any listing below.</p>
+      <p class="note">Paste an address or a Realtor.com, Zillow or Redfin link to see what to offer.</p>
       <form class="find" id="findForm"><input id="findAddr" type="text" placeholder="e.g. 123 Main St, Columbus, OH 43201" aria-label="House address or link"><button type="submit">Deal check</button></form>
       <div class="note" id="findStatus"></div>`;
     $("#findForm").onsubmit = async e => {
@@ -866,7 +863,7 @@
       if (a.length < 6) return;
       $("#findStatus").textContent = "Looking up the house...";
       try {
-        const r = await fetch(`${API}/api/listings?address=${encodeURIComponent(a)}`), j = await r.json();
+        const r = await fetch(`${API}/api/listings?address=${encodeURIComponent(a)}&v=2`), j = await r.json();
         if (!r.ok || !j.home) throw new Error(j.error || "not found");
         fullCache.set(j.home.id, j.home);
         deal = { id: j.home.id, zip: j.home.zip, base: j.home };
@@ -882,7 +879,7 @@
     $("#s-deal").scrollIntoView({ behavior: "smooth", block: "start" });
     if (!fullCache.has(deal.id) && API && s.formattedAddress) {
       try {
-        const r = await fetch(`${API}/api/listings?address=${encodeURIComponent(s.formattedAddress)}`), j = await r.json();
+        const r = await fetch(`${API}/api/listings?address=${encodeURIComponent(s.formattedAddress)}&v=2`), j = await r.json();
         fullCache.set(deal.id, j.home || {});
       } catch (e) { fullCache.set(deal.id, {}); }
       if (deal && rec) renderDeal(inputs());
@@ -900,25 +897,23 @@
     const d = Deal.analyze(s, { sold: listing?.zip === zip ? listing.sold || [] : [], active: listing?.zip === zip ? listing.sale : null,
       monthly: rec.zhvi_recent, yearly: hist, rec, o: oo, maxPrice: Calc.maxPrice(oo).price, rate15: NAT.rate15_latest?.value });
     const bt = d.backtest, gapTxt = Number.isFinite(d.gap) ? (Math.abs(d.gap) < 3 ? "in line with" : `${Math.abs(d.gap).toFixed(0)}% ${d.gap > 0 ? "above" : "below"}`) : null;
-    const verdict = !Number.isFinite(d.F) ? "Not enough data for a value estimate, so the offer follows how homes here sell versus asking."
-      : d.gap > 8 ? "Asking price looks high for what similar homes are worth." : d.gap < -8 ? "Asking price is below the value estimates: a possible bargain, or something the photos don't show."
-      : "Asking price is about right for the area.";
+    const verdict = !Number.isFinite(d.F) ? "No value estimate available." : d.gap > 8 ? "Priced high." : d.gap < -8 ? "Priced low: a bargain or a hidden problem." : "Priced about right.";
     const yrs = s.lastSoldDate ? (Date.now() - new Date(s.lastSoldDate)) / 3.156e10 : null;
     const ins = d.offer * oo.insRate / 100, hz = rec.hazard, flood = (hz?.top || []).some(([n, , lab]) => /flood/i.test(n) && /high/i.test(lab || ""));
 
-    // the strategist's advice
+    // the strategist's advice, shortest first
     const tips = [];
-    if (d.hot) tips.push(`Homes here often sell at or above asking${Number.isFinite(d.comp.above) && d.comp.n >= 8 ? ` (${pct(d.comp.above * 100, 0)} of recent sales went over)` : ""}. Lead with a clean offer: pre-approval letter, 1-3% earnest money and a flexible closing date. An escalation clause up to your walk-away price helps if there are other offers.`);
-    if (d.soft) tips.push(`Buyers have room to negotiate here${rec.market?.price_drops != null ? `: ${pct(rec.market.price_drops * 100, 0)} of listings in the zip have cut their price` : ""}. Open at ${k(d.opening)} and ask the seller to pay part of your closing costs (up to 3% on most conventional loans, 6% on FHA) or to buy down your rate.`);
-    if (d.stale) tips.push(`This house has been listed ${s.daysOnMarket} days, longer than most here (about ${Math.round(d.zipDom)}). The seller may take less: ask the listing agent about earlier offers and price cuts.`);
-    if (d.gap > 8) tips.push(`Asking is ${d.gap.toFixed(0)}% above the value estimates, so the bank's appraisal may come in low. Keep the appraisal contingency, and don't promise to cover an appraisal gap.`);
-    if (d.gap < -8) tips.push(`Asking is below the value estimates. Expect competition, and inspect carefully: underpricing can mean hidden problems.`);
-    if (d.flip) tips.push(`It sold for ${k(s.lastSoldPrice)} in ${s.lastSoldDate.slice(0, 4)} and is back at a much higher price, so it was likely renovated or flipped. Ask for permits and contractor invoices, and have the inspector check the new work.`);
-    if (d.bad.length) tips.push(`The listing mentions: ${d.bad.join(", ")}. Get repair quotes during the inspection period before you commit, and price them into your offer.`);
-    if (d.taxNow && d.taxAfter > d.taxNow * 1.15) tips.push(`The seller's tax bill is ${money(d.taxNow)} a year, but at your price expect about ${money(d.taxAfter)} (many places reassess at the sale price). Budget on the higher number.`);
-    if (s.hoa) tips.push(`HOA fee ${money(s.hoa)}/mo. Before you commit, get the HOA budget, reserve study, any planned special assessments and its rules on renting out.`);
-    if (flood) tips.push(`River or coastal flooding is a high risk in this zip. Check this address on FEMA's flood map and get a flood insurance quote before you offer.`);
-    tips.push(`Whatever the market, keep the inspection, financing and appraisal contingencies. Giving them up is what turns a bad surprise into lost money.`);
+    if (d.hot) tips.push(`Homes here often sell over asking. Make a clean offer: pre-approval, 1-3% deposit, flexible closing date.`);
+    if (d.soft) tips.push(`Buyers have the upper hand${rec.market?.price_drops != null ? ` (${pct(rec.market.price_drops * 100, 0)} of listings cut their price)` : ""}. Open low and ask the seller to cover closing costs or buy down your rate.`);
+    if (d.stale) tips.push(`Listed ${s.daysOnMarket} days (typical here: ${Math.round(d.zipDom)}). The seller may take less.`);
+    if (d.gap > 8) tips.push(`Asking is ${d.gap.toFixed(0)}% above the value estimate, so the appraisal may come in low. Keep that contingency.`);
+    if (d.gap < -8) tips.push(`Asking is below the value estimate. Expect competition and inspect carefully.`);
+    if (d.flip) tips.push(`Sold for ${k(s.lastSoldPrice)} in ${s.lastSoldDate.slice(0, 4)}, now much higher: likely flipped. Ask for permits and receipts.`);
+    if (d.bad.length) tips.push(`Listing mentions: ${d.bad.join(", ")}. Get repair quotes before you commit.`);
+    if (d.taxNow && d.taxAfter > d.taxNow * 1.15) tips.push(`Property tax will likely rise from ${money(d.taxNow)} to about ${money(d.taxAfter)} a year after you buy.`);
+    if (s.hoa) tips.push(`HOA ${money(s.hoa)}/mo: ask for its budget, reserves and any planned special fees.`);
+    if (flood) tips.push(`High flood risk in this zip: check FEMA's flood map and get a flood insurance quote.`);
+    tips.push(`Keep the inspection, financing and appraisal contingencies.`);
 
     const STEPS = [
       ["preapp", "Before the offer", "Get pre-approved, with rate quotes from 3 lenders on the same day"],
@@ -944,27 +939,25 @@
     el.innerHTML = `<div class="row" style="justify-content:space-between"><h2>Deal check: ${esc(s.formattedAddress || "")}</h2><button type="button" class="link" id="dealClose">Close</button></div>
       <div class="asof">Asking ${money(d.L)}${s.daysOnMarket != null ? ` &middot; listed ${s.daysOnMarket} days` : ""}${s.squareFootage ? ` &middot; ${s.squareFootage.toLocaleString()} sq ft` : ""}${s.yearBuilt ? ` &middot; built ${s.yearBuilt}` : ""}
         ${s.url ? ` &middot; <a href="${esc(s.url)}" target="_blank" rel="noopener">listing</a>` : ""}${loadingFull ? " &middot; loading the full property record..." : ""}</div>
-      <p class="verdict"><b>${verdict}</b>${gapTxt ? ` Asking is ${gapTxt} the value estimate of ${k(d.F)}.` : ""}</p>
+      <p class="verdict"><b>${verdict}</b>${gapTxt ? ` Asking is ${gapTxt} the value estimate (${k(d.F)}).` : ""}</p>
       <div class="offer3">
         <div><div class="k">Open at</div><div class="v">${k(d.opening)}</div><div class="note">${pct(d.opening / d.L * 100, 1)} of asking</div></div>
-        <div><div class="k">Expect to pay</div><div class="v">${k(d.offer)}</div><div class="note">what homes like this have been selling for</div></div>
-        <div><div class="k">Walk away above</div><div class="v">${k(d.walk)}</div><div class="note">${d.walk === d.maxPrice ? "your budget limit" : "value estimate + 3%"}</div></div>
+        <div><div class="k">Expect to pay</div><div class="v">${k(d.offer)}</div><div class="note">typical sale price here</div></div>
+        <div><div class="k">Walk away above</div><div class="v">${k(d.walk)}</div><div class="note">${d.walk === d.maxPrice ? "your budget" : "value estimate + 3%"}</div></div>
       </div>
-      ${d.overBudget ? `<p class="note"><span class="pill warn">Over budget</span> The likely price is more than you can afford (${k(d.maxPrice)}) with your current numbers.</p>` : ""}
+      ${d.overBudget ? `<p><span class="pill warn">Over your budget of ${k(d.maxPrice)}</span></p>` : ""}
       <h3>What to do</h3><ul class="tight">${tips.map(t => `<li>${t}</li>`).join("")}</ul>
 
-      <details class="sub"><summary>How the offer was worked out, and how well it did on recent sales</summary>
-        <p class="note">${d.comp.n >= 8 ? `In the last 6 months, ${d.comp.n} homes in ${zip} sold for a typical ${pct(d.comp.stl * 100, 1)} of their asking price, after about ${Math.round(d.comp.dom)} days.` :
-          d.nonDisclosure ? `${esc(STATES[rec.state]?.name || rec.state)} doesn't make sale prices public, so there are few or no recent sale prices here. The offer uses Realtor.com's market data and the value estimates instead, and can't be tested on past sales.` :
-          "There weren't enough recent sales with prices here to measure how homes sell versus asking, so a typical 98% is assumed."}
-        ${bt.n >= 8 ? ` Replaying the rule on each of those ${bt.n} sales (using only the other sales): the "expect to pay" price was within 5% of the real price ${pct(bt.within5, 0)} of the time, missing by ${pct(bt.offerMiss, 1)} typically. ${bt.w > 0 ? `Here fair value helped, so it pulls the price ${Math.round(bt.w * 100)}% of the way (on a log scale) toward the value estimate.` : `Here the asking price predicted the sale price better than nearby sales did (typical miss ${pct(bt.listMiss, 1)} vs ${pct(bt.fairMiss, 1)}), so the price follows asking and the value estimate is used for the walk-away price and the verdict.`}` : ""}</p>
-        ${lad ? `<div class="table-wrap"><table><tr><th>If you offer</th><th>Price</th><th>Recent sales here that closed at or below that share of asking</th></tr>${lad}</table></div>
-          <p class="note">Read the last column as a rough chance your offer would have been the winning price, if it's the only thing that differs.</p>` : ""}
+      <details class="sub"><summary>How this was worked out</summary>
+        <p class="note">${d.comp.n >= 8 ? `${d.comp.n} homes sold here in the last 6 months, typically at ${pct(d.comp.stl * 100, 1)} of asking after ${Math.round(d.comp.dom)} days.` :
+          d.nonDisclosure ? `${esc(STATES[rec.state]?.name || rec.state)} doesn't publish sale prices, so this uses market data and value estimates only.` : "Too few recent sales here; assumes homes sell at 98% of asking."}
+        ${bt.n >= 8 ? `Tested on those sales: "expect to pay" landed within 5% of the real price ${pct(bt.within5, 0)} of the time. ${bt.w > 0 ? "Nearby sales improved the guess, so they're included." : `Asking price predicted sale price better than nearby sales did (off by ${pct(bt.listMiss, 1)} vs ${pct(bt.fairMiss, 1)}), so the offer follows asking.`}` : ""}</p>
+        ${lad ? `<div class="table-wrap"><table><tr><th>Offer</th><th>Price</th><th>Recent sales it would have matched or beaten</th></tr>${lad}</table></div>` : ""}
         <h3>Value estimates</h3>
         <div class="table-wrap"><table><tr><th>Source</th><th>Value</th><th>Range</th></tr>${readRows || `<tr><td colspan="3">None available</td></tr>`}</table></div>
         ${d.comps.length ? `<details class="sub"><summary>The nearby sales used (${d.comps.length})</summary><div class="table-wrap"><table><tr><th>Address</th><th>Sold</th><th>When</th><th>Sq ft</th><th>Beds</th><th>Miles</th><th>In today's prices, scaled to this size</th></tr>
           ${d.comps.map(c => `<tr><td>${esc(c.address || "")}</td><td>${k(c.sold)}</td><td>${c.date || ""}</td><td>${c.sqft ? c.sqft.toLocaleString() : ""}</td><td>${c.bedrooms ?? ""}</td><td>${c.dist.toFixed(1)}</td><td>${k(c.value)}</td></tr>`).join("")}</table></div>
-          <p class="note">Each sale is moved to today's prices with the zip's Zillow index and scaled for size (bigger homes cost less per square foot). Sales don't record condition, so a renovated and a dated house can differ a lot.</p></details>` : ""}
+          <p class="note">Adjusted to today's prices and this home's size. Condition isn't recorded.</p></details>` : ""}
       </details>
 
       <details class="sub"><summary>History, taxes and land</summary>
@@ -981,7 +974,7 @@
           ${s.views7 ? `<tr><td>Realtor.com views / saves, last 7 days</td><td>${s.views7.toLocaleString()} / ${s.saves7 ?? 0}</td></tr>` : ""}
         </table>
         ${th.length ? `<div class="table-wrap"><table><tr><th>Tax year</th><th>Tax</th><th>Land</th><th>Building</th><th>Assessed</th></tr>${th.map(r => `<tr><td>${r[0]}</td><td>${money(r[1])}</td><td>${r[2] ? k(r[2]) : ""}</td><td>${r[3] ? k(r[3]) : ""}</td><td>${r[4] ? k(r[4]) : ""}</td></tr>`).join("")}</table></div>
-          <p class="note">Assessed values are set by the county and are often well below market value; the land share is the useful part. A high land share means most of the price is the lot, so the house itself matters less (and may be a teardown candidate).</p>` : ""}
+          <p class="note">County assessments often run below market value; the land share is what matters.</p>` : ""}
       </details>
 
       <details class="sub"><summary>Condition, structure and risks</summary>
@@ -992,20 +985,20 @@
         ${s.yearBuilt ? `<ul class="note tight">${ageFlags(s.yearBuilt).map(f => `<li>${f}</li>`).join("")}</ul>` : ""}
         ${hz ? `<p class="note"><b>Natural hazards (FEMA, this zip):</b> ${hz.label || ""}${(hz.top || []).length ? `; highest: ${hz.top.slice(0, 3).map(([n, , lab]) => `${esc(n.toLowerCase())} (${(lab || "").toLowerCase()})`).join(", ")}` : ""}.
           ${hz.loss_rate != null ? ` Expected damage averages about ${money(d.offer * hz.loss_rate / 100)} a year at this price.` : ""}</p>` : ""}
-        <p class="note">Roof age, wiring and the foundation's real condition only come from an inspection. Use the inspection period to get repair quotes before you commit.</p>
+        <p class="note">Roof, wiring and foundation condition only come from an inspection.</p>
       </details>
 
       <details class="sub"><summary>Loan options at ${k(d.offer)}</summary>
         <div class="table-wrap"><table><tr><th>Loan</th><th>Cash up front</th><th>Monthly</th><th>For you</th></tr>${loanRows}</table></div>
         <ul class="note tight">${d.loans.map(l => `<li><b>${esc(l.name)}:</b> ${esc(l.note)}</li>`).join("")}</ul>
-        <p class="note">All at ${o.ratePct}% (${o.years}-year) except the 15-year. FHA and VA rates are often a little lower than conventional; compare written quotes from several lenders, and ask what paying points or a seller-paid buydown would do. Loans over ${k(Deal.LIMITS.conforming)} are "jumbo" in most counties (${Deal.LIMITS.year} limit) and usually need more down.</p>
+        <p class="note">All at ${o.ratePct}% except the 15-year. Get written quotes from 3 lenders. Loans over ${k(Deal.LIMITS.conforming)} are "jumbo" in most counties (${Deal.LIMITS.year}).</p>
       </details>
 
       <details class="sub"><summary>Step-by-step plan to closing</summary>
         <div class="steps">${STEPS.map(([key, when, what]) => `<label class="note"><input type="checkbox" data-step="${key}" ${done[key] ? "checked" : ""}> <b>${when}:</b> ${what}</label>`).join("")}</div>
         <p class="note">Ticks are saved in this browser.</p>
       </details>
-      <p class="note">Estimates from public data, not an appraisal or advice from a licensed agent.</p>`;
+      <p class="note">Estimates from public data, not an appraisal.</p>`;
     $("#dealClose").onclick = () => { deal = null; renderDeal(o); };
     el.querySelectorAll("[data-step]").forEach(c => c.onchange = () => { (steps[deal.id] = steps[deal.id] || {})[c.dataset.step] = c.checked; saveSteps(); });
   }
@@ -1281,7 +1274,7 @@
         ${sc.list.map(x => `<tr><td>${esc(x.name || "")}${x.charter ? " <span class=\"note\">(charter)</span>" : ""}</td><td>${x.level || ""}</td><td>${x.mi}</td>
           <td>${x.enroll ?? ""}</td><td>${x.ratio ?? ""}</td><td>${x.math != null ? pct(x.math, 0) : ""}</td><td>${x.read != null ? pct(x.read, 0) : ""}</td><td>${gradeTag(x.d10)}</td></tr>`).join("")}
       </table></div>
-      <p class="note">District score: where the district's average test scores rank among US districts on Stanford's nationally comparable scale (SEDA 2025.1), in tenths: 10/10 = top 10%, 1/10 = bottom 10%. The in-state score ranks it against the state's own districts. Sites like GreatSchools also weigh student progress and gaps between groups and rate each school against its state, so their 1-10 ratings can be a few points higher or lower. Math and reading are the share of students proficient on their state's test in 2018-19, the last full national release; states use different tests, so compare those only within a state. Attendance zones aren't in this data, so check which schools a specific address is assigned to with the district. More: <a href="${nces}" target="_blank" rel="noopener">NCES school search</a>.</p>`;
+      <p class="note">Scores rank average test results (Stanford SEDA 2025.1): 10/10 = top 10%. GreatSchools also counts student progress, so its ratings can differ. Math and reading: share proficient on the state test (2018-19). Check which school an address is zoned for with the district. More: <a href="${nces}" target="_blank" rel="noopener">NCES school search</a>.</p>`;
   }
 
 
