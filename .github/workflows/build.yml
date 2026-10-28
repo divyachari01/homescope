@@ -49,7 +49,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [ -d listings ]; then
             git add listings logs/listings.txt
-            git diff --cached --quiet || (git commit -m "Update listings" && git push)
+            git diff --cached --quiet || (git commit -m "Update listings" && git pull --rebase -q && git push) || echo "Could not save listings to the repo this time"
           fi
 
       - name: Build data
