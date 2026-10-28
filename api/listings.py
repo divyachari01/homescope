@@ -36,15 +36,50 @@ def build(zipcode):
         return out
 
 
-def home(address, raw=False):
+FEATURES = ("Building and Construction", "Heating and Cooling", "Other Rooms", "Utilities",
+            "Exterior and Lot Features", "Garage and Parking", "Homeowners Association", "Interior Features")
+
+
+def parse_home(r):
+    """Realtor.com's full record for one home -> the fields the deal check uses."""
+    d, loc = r.get("description") or {}, (r.get("location") or {}).get("address") or {}
+    num = fetch_listings.num
+    full, half = num(d.get("baths_full")), num(d.get("baths_half"))
+    ptype = next((n for k, n in fetch_listings.STYLE if k in str(d.get("type") or "").upper()), None)
+    addr = ", ".join(x for x in (loc.get("line"), loc.get("city"), f"{loc.get('state_code') or ''} {loc.get('postal_code') or ''}".strip()) if x)
+    coord = loc.get("coordinate") or {}
+    est = [{"name": (e.get("source") or {}).get("name"), "value": num(e.get("estimate")), "low": num(e.get("estimateLow")),
+            "high": num(e.get("estimateHigh")), "date": e.get("date")}
+           for e in ((r.get("estimates") or {}).get("currentValues") or []) if e.get("estimate")]
+    taxes = [[t.get("year"), num(t.get("tax")), num((t.get("assessment") or {}).get("land")),
+              num((t.get("assessment") or {}).get("building")), num((t.get("assessment") or {}).get("total"))]
+             for t in (r.get("taxHistory") or [])[:12] if t.get("year")]
+    feats = {x["category"]: x.get("text", [])[:8] for x in (r.get("details") or []) if x.get("category") in FEATURES}
+    pop = next((p for p in ((r.get("popularity") or {}).get("periods") or []) if p.get("last_n_days") == 7), {})
+    out = {
+        "id": str(r.get("property_id") or addr), "formattedAddress": addr, "zip": str(loc.get("postal_code") or "")[:5],
+        "state": loc.get("state_code"), "status": r.get("status"), "propertyType": ptype, "price": num(r.get("list_price")),
+        "bedrooms": d.get("beds"), "bathrooms": (full or 0) + 0.5 * (half or 0) if full is not None else None,
+        "squareFootage": d.get("sqft"), "lotSize": d.get("lot_sqft"), "yearBuilt": d.get("year_built"),
+        "stories": d.get("stories"), "garage": d.get("garage"), "latitude": coord.get("lat"), "longitude": coord.get("lon"),
+        "hoa": num((r.get("hoa") or {}).get("fee")), "url": r.get("href"), "photo": (r.get("primary_photo") or {}).get("href"),
+        "listDate": fetch_listings.day(r.get("list_date")), "lastSoldDate": fetch_listings.day(r.get("last_sold_date")),
+        "lastSoldPrice": num(r.get("last_sold_price")), "estimates": est or None,
+        "estimate": next((e["value"] for e in est), None), "taxHistory": taxes or None, "tax": taxes[0][1] if taxes else None,
+        "features": feats or None, "tags": r.get("tags"), "text": ((d.get("text") or "")[:3000]) or None,
+        "views7": pop.get("views_total"), "saves7": pop.get("saves_total"),
+        "newBuild": True if (r.get("flags") or {}).get("is_new_construction") else None,
+    }
+    if out["listDate"] and out["status"] == "for_sale":
+        out["daysOnMarket"] = (dt.date.today() - dt.date.fromisoformat(out["listDate"])).days
+    return {k: v for k, v in out.items() if v not in (None, "", [])}
+
+
+def home(address):
     """One property by address, listed or not (for checking a house you found elsewhere)."""
     from homeharvest import scrape_property
-    if raw:
-        return {"raw": scrape_property(location=address, return_type="raw")}
-    df = scrape_property(location=address)
-    rows = [fetch_listings.from_homeharvest(r) | {"zip": str(r.get("zip_code") or "")[:5], "status": r.get("status")}
-            for r in df.to_dict("records")]
-    return {"home": rows[0] if rows else None}
+    rows = scrape_property(location=address, return_type="raw")
+    return {"home": parse_home(rows[0]) if rows else None}
 
 
 class handler(BaseHTTPRequestHandler):  # noqa: N801  (name required by Vercel)
@@ -53,7 +88,7 @@ class handler(BaseHTTPRequestHandler):  # noqa: N801  (name required by Vercel)
         address = (q.get("address") or [""])[0].strip()
         if address:
             try:
-                return self.send(200, home(address[:200], raw="raw" in q), cache=True)
+                return self.send(200, home(address[:200]), cache=True)
             except Exception as e:  # noqa: BLE001
                 return self.send(502, {"error": f"lookup failed: {e}"}, cache=False)
         z = (q.get("zip") or [""])[0].strip()
