@@ -1,2 +1,2 @@
-43201: Realtor.com (HomeHarvest) failed: RetryError[<Future at 0x7e5141d93080 state=finished raised AuthenticationError>]
-43201: keeping listings from 2026-10-28
+43201: 119 for sale, 573 for rent (Realtor.com)
+43201: facing direction estimated for 118 of 119 homes
