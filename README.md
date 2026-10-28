@@ -80,7 +80,7 @@ The site rebuilds daily, but each source publishes on its own schedule, and ever
 | Violent crime (county) | County Health Rankings | yearly |
 | Presidential results | MIT Election Data and Science Lab | every 4 years |
 | Rent control, just cause, notice periods | NAA, NLIHC, Nolo (in `pipeline/states.csv`) | checked by hand, Oct 2026 |
-| Car insurance | NAIC state averages | 2024, updated by hand |
+| Car insurance | NAIC average paid (2024, newest official, released Oct 2026) and Insurify full-coverage quotes (Sep 2026) | updated by hand |
 
 ## Limits worth knowing
 

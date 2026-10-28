@@ -255,8 +255,9 @@
     if (rec.acs?.renter_share != null) out.push(card("Renters", pct(rec.acs.renter_share, 0) + " of homes",
       `${pct(rec.acs.rent_vacancy)} of rentals sit empty`));
     if (ind.crime != null) out.push(card(`${crimeName()} (county)`, Math.round(ind.crime) + " per 100k", pctSub(p.crime, "Higher than")));
-    const car = STATES[rec.state]?.car_insurance;
-    if (car) out.push(card("Car insurance (state avg)", money(car) + "/yr", `About ${money(car / 12)}/mo per car, NAIC 2024`));
+    const car = STATES[rec.state]?.car_insurance, carQ = STATES[rec.state]?.car_quote;
+    if (carQ || car) out.push(card("Car insurance (state)", carQ ? `${money(carQ)}/mo` : `${money(car)}/yr`,
+      carQ ? `Typical full-coverage quote, Sep 2026 (Insurify).${car ? ` Average actually paid in 2024: ${money(car / 12)}/mo (NAIC)` : ""}` : "Average paid per car, 2024 (NAIC)"));
     const v = rec.votes, sv = STATES[rec.state]?.votes;
     if (v || sv) {
       const src = v || sv, i = src.years.length - 1, m = src.rep[i] - src.dem[i];
@@ -525,7 +526,7 @@
       const car = STATES[rec.state]?.car_insurance;
       html = `<h2>Buying to live in</h2>
         <table><tr><td>Owning the selected home, all-in per month</td><td>${money(own)}</td></tr>
-        ${car ? `<tr><td>Car insurance, state average per car</td><td>${money(car / 12)}</td></tr>` : ""}
+        ${STATES[rec.state]?.car_quote ? `<tr><td>Car insurance, typical full-coverage quote in the state (Sep 2026)</td><td>${money(STATES[rec.state].car_quote)}</td></tr>` : car ? `<tr><td>Car insurance, state average per car (2024)</td><td>${money(car / 12)}</td></tr>` : ""}
         ${rent ? `<tr><td>Typical rent in this zip</td><td>${money(rent)}</td></tr>
         <tr><td>Owning costs ${own > rent ? "more" : "less"} than renting by</td><td>${money(Math.abs(own - rent))}/mo</td></tr>` : ""}</table>
         <p class="note">Part of each mortgage payment is savings (principal), which renting doesn't give you. The best-time table above weighs both sides.</p>`;
@@ -603,7 +604,8 @@
           ${a.broadband != null ? `<tr><td>Homes with broadband internet</td><td>${pct(a.broadband, 0)}</td><td></td></tr>` : ""}
           ${rec.jobs ? `<tr><td>Jobs in the county</td><td>${Math.round(rec.jobs.jobs).toLocaleString()}</td><td>${signed(rec.jobs.jobs_change)} since</td></tr>
           <tr><td>Average pay in the county</td><td>${money(rec.jobs.avg_pay)}</td><td></td></tr>` : ""}
-          ${STATES[rec.state]?.car_insurance ? `<tr><td>Car insurance per car (state avg, 2024)</td><td>${money(STATES[rec.state].car_insurance)}/yr</td><td></td></tr>` : ""}
+          ${STATES[rec.state]?.car_quote ? `<tr><td>Car insurance, full-coverage quote (state, Sep 2026)</td><td>${money(STATES[rec.state].car_quote)}/mo</td><td></td></tr>` : ""}
+          ${STATES[rec.state]?.car_insurance ? `<tr><td>Car insurance, average actually paid (state, 2024)</td><td>${money(STATES[rec.state].car_insurance)}/yr</td><td></td></tr>` : ""}
         </table>
         <div>
           <b>Housing mix</b> <span class="note">(share of all homes by building type)</span>

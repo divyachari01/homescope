@@ -1,52 +1,52 @@
-state,name,rent_control,just_cause,nonpay_notice_days,notes,car_insurance
-AK,Alaska,No statewide ban found and none in place (check locally),No,7,,1231
-AL,Alabama,Cities banned from adopting rent control,No,7,,1178
-AR,Arkansas,Cities banned from adopting rent control,No,3,,1172
-AZ,Arizona,Cities banned from adopting rent control,No,5,,1471
-CA,California,Statewide cap on rent increases,"Yes, statewide",3,Statewide cap (AB 1482) applies to many older units; some cities have stricter rules.,1454
-CO,Colorado,Cities banned from adopting rent control,"Yes, statewide",10,,1601
-CT,Connecticut,No rent caps; town fair rent commissions hear complaints,Limited,9,Just cause protection mainly for older and disabled tenants in larger buildings.,1564
-DC,District of Columbia,Local rent control allowed and in use in some places,"Yes, statewide",30,Notice of intent to file required when $600+ is unpaid.,1840
-DE,Delaware,No statewide ban found and none in place (check locally),No,5,,1620
-FL,Florida,Cities banned from adopting rent control,No,3,,2018
-GA,Georgia,Cities banned from adopting rent control,No,0,Landlord can file right away; tenant then has 7 days to pay.,1758
-HI,Hawaii,No statewide ban found and none in place (check locally),No,5,,935
-IA,Iowa,Cities banned from adopting rent control,No,3,,973
-ID,Idaho,Cities banned from adopting rent control,No,3,,956
-IL,Illinois,Cities banned from adopting rent control,No,5,,1264
-IN,Indiana,Cities banned from adopting rent control,No,10,,1019
-KS,Kansas,Cities banned from adopting rent control,No,3,,1064
-KY,Kentucky,Cities banned from adopting rent control,No,7,,1150
-LA,Louisiana,Cities banned from adopting rent control,Limited,0,,1880
-MA,Massachusetts,Cities banned from adopting rent control,No,14,,1504
-MD,Maryland,Local rent control allowed and in use in some places,No,10,,1626
-ME,Maine,Local rent control allowed and in use in some places,No,7,,935
-MI,Michigan,Cities banned from adopting rent control,Limited,7,,1631
-MN,Minnesota,Local rent control allowed and in use in some places,No,14,St. Paul and Minneapolis can set rent rules by local vote.,1232
-MO,Missouri,Cities banned from adopting rent control,No,0,,1274
-MS,Mississippi,Cities banned from adopting rent control,No,3,,1315
-MT,Montana,Cities banned from adopting rent control,No,3,,1081
-NC,North Carolina,Cities banned from adopting rent control,No,10,,1038
-ND,North Dakota,Cities banned from adopting rent control,No,0,,907
-NE,Nebraska,No statewide ban found and none in place (check locally),No,7,,1108
-NH,New Hampshire,No statewide ban found and none in place (check locally),"Yes, statewide",7,,1073
-NJ,New Jersey,Local rent control allowed and in use in some places,"Yes, statewide",0,Anti-Eviction Act: strong just cause rules; many towns have rent control.,1748
-NM,New Mexico,Cities banned from adopting rent control,No,3,,1180
-NV,Nevada,No statewide ban found and none in place (check locally),No,7,,1704
-NY,New York,Local rent control allowed and in use in some places,Limited,14,Good Cause Eviction applies in NYC and towns that opt in; rent stabilization mostly NYC area.,1981
-OH,Ohio,Cities banned from adopting rent control,No,0,Short 3-day notice to leave; no option-to-pay notice required.,1037
-OK,Oklahoma,Cities banned from adopting rent control,No,5,,1183
-OR,Oregon,Statewide cap on rent increases,"Yes, statewide",10,Statewide cap on yearly increases; just cause after the first year.,1269
-PA,Pennsylvania,No statewide ban found and none in place (check locally),No,10,,1267
-RI,Rhode Island,No statewide ban found and none in place (check locally),No,5,,1671
-SC,South Carolina,Cities banned from adopting rent control,No,5,,1498
-SD,South Dakota,Cities banned from adopting rent control,No,3,,1037
-TN,Tennessee,Cities banned from adopting rent control,No,14,,1165
-TX,Texas,Cities banned from adopting rent control,No,3,,1578
-UT,Utah,Cities banned from adopting rent control,No,3,,1281
-VA,Virginia,No statewide ban found and none in place (check locally),No,5,,1218
-VT,Vermont,No statewide ban found and none in place (check locally),No,14,,942
-WA,Washington,Statewide cap on rent increases,"Yes, statewide",14,Statewide cap on yearly increases since 2025.,1416
-WI,Wisconsin,Cities banned from adopting rent control,No,5,,1015
-WV,West Virginia,No statewide ban found and none in place (check locally),No,0,,1179
-WY,Wyoming,No statewide ban found and none in place (check locally),No,3,,1012
+state,name,rent_control,just_cause,nonpay_notice_days,notes,car_insurance,car_quote_monthly
+AK,Alaska,No statewide ban found and none in place (check locally),No,7,,1231,97
+AL,Alabama,Cities banned from adopting rent control,No,7,,1178,142
+AR,Arkansas,Cities banned from adopting rent control,No,3,,1172,150
+AZ,Arizona,Cities banned from adopting rent control,No,5,,1471,162
+CA,California,Statewide cap on rent increases,"Yes, statewide",3,Statewide cap (AB 1482) applies to many older units; some cities have stricter rules.,1454,203
+CO,Colorado,Cities banned from adopting rent control,"Yes, statewide",10,,1601,217
+CT,Connecticut,No rent caps; town fair rent commissions hear complaints,Limited,9,Just cause protection mainly for older and disabled tenants in larger buildings.,1564,225
+DC,District of Columbia,Local rent control allowed and in use in some places,"Yes, statewide",30,Notice of intent to file required when $600+ is unpaid.,1840,237
+DE,Delaware,No statewide ban found and none in place (check locally),No,5,,1620,262
+FL,Florida,Cities banned from adopting rent control,No,3,,2018,236
+GA,Georgia,Cities banned from adopting rent control,No,0,Landlord can file right away; tenant then has 7 days to pay.,1758,259
+HI,Hawaii,No statewide ban found and none in place (check locally),No,5,,935,126
+IA,Iowa,Cities banned from adopting rent control,No,3,,973,111
+ID,Idaho,Cities banned from adopting rent control,No,3,,956,107
+IL,Illinois,Cities banned from adopting rent control,No,5,,1264,162
+IN,Indiana,Cities banned from adopting rent control,No,10,,1019,128
+KS,Kansas,Cities banned from adopting rent control,No,3,,1064,157
+KY,Kentucky,Cities banned from adopting rent control,No,7,,1150,194
+LA,Louisiana,Cities banned from adopting rent control,Limited,0,,1880,209
+MA,Massachusetts,Cities banned from adopting rent control,No,14,,1504,137
+MD,Maryland,Local rent control allowed and in use in some places,No,10,,1626,302
+ME,Maine,Local rent control allowed and in use in some places,No,7,,935,139
+MI,Michigan,Cities banned from adopting rent control,Limited,7,,1631,229
+MN,Minnesota,Local rent control allowed and in use in some places,No,14,St. Paul and Minneapolis can set rent rules by local vote.,1232,182
+MO,Missouri,Cities banned from adopting rent control,No,0,,1274,180
+MS,Mississippi,Cities banned from adopting rent control,No,3,,1315,186
+MT,Montana,Cities banned from adopting rent control,No,3,,1081,139
+NC,North Carolina,Cities banned from adopting rent control,No,10,,1038,113
+ND,North Dakota,Cities banned from adopting rent control,No,0,,907,114
+NE,Nebraska,No statewide ban found and none in place (check locally),No,7,,1108,134
+NH,New Hampshire,No statewide ban found and none in place (check locally),"Yes, statewide",7,,1073,85
+NJ,New Jersey,Local rent control allowed and in use in some places,"Yes, statewide",0,Anti-Eviction Act: strong just cause rules; many towns have rent control.,1748,257
+NM,New Mexico,Cities banned from adopting rent control,No,3,,1180,133
+NV,Nevada,No statewide ban found and none in place (check locally),No,7,,1704,260
+NY,New York,Local rent control allowed and in use in some places,Limited,14,Good Cause Eviction applies in NYC and towns that opt in; rent stabilization mostly NYC area.,1981,218
+OH,Ohio,Cities banned from adopting rent control,No,0,Short 3-day notice to leave; no option-to-pay notice required.,1037,117
+OK,Oklahoma,Cities banned from adopting rent control,No,5,,1183,169
+OR,Oregon,Statewide cap on rent increases,"Yes, statewide",10,Statewide cap on yearly increases; just cause after the first year.,1269,156
+PA,Pennsylvania,No statewide ban found and none in place (check locally),No,10,,1267,162
+RI,Rhode Island,No statewide ban found and none in place (check locally),No,5,,1671,298
+SC,South Carolina,Cities banned from adopting rent control,No,5,,1498,255
+SD,South Dakota,Cities banned from adopting rent control,No,3,,1037,152
+TN,Tennessee,Cities banned from adopting rent control,No,14,,1165,132
+TX,Texas,Cities banned from adopting rent control,No,3,,1578,204
+UT,Utah,Cities banned from adopting rent control,No,3,,1281,146
+VA,Virginia,No statewide ban found and none in place (check locally),No,5,,1218,207
+VT,Vermont,No statewide ban found and none in place (check locally),No,14,,942,140
+WA,Washington,Statewide cap on rent increases,"Yes, statewide",14,Statewide cap on yearly increases since 2025.,1416,184
+WI,Wisconsin,Cities banned from adopting rent control,No,5,,1015,125
+WV,West Virginia,No statewide ban found and none in place (check locally),No,0,,1179,156
+WY,Wyoming,No statewide ban found and none in place (check locally),No,3,,1012,94

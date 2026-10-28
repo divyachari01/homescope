@@ -32,7 +32,7 @@ That license covers only this project's own code and text. The third-party softw
 | Streets, places, noise sources, address lookup and drive times | (c) OpenStreetMap contributors, via Overpass API, Nominatim and OSRM | [Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/). Facing directions and nearby-place counts derived from OpenStreetMap are made available under the ODbL. Nominatim and the OSRM demo server are used lightly from the browser under their usage policies |
 | School test scores | Stanford Education Data Archive (Reardon, S. F., Ho, A. D., Shear, B. R., Fahle, E. M., Kalogrides, D., & Saliba, J. (2024). Stanford Education Data Archive, Version 5.0) and the Urban Institute Education Data Portal | Used with the citation requested by each provider |
 | County jobs and pay | US Census Bureau, County Business Patterns | US government work, public domain |
-| Car insurance averages | National Association of Insurance Commissioners | Published state averages, cited |
+| Car insurance | National Association of Insurance Commissioners (average paid, 2024, released Oct 2026) and Insurify (typical full-coverage quotes by state through Sep 2026) | Published state figures, cited |
 | State landlord-tenant law summary | Compiled from NAA, NLIHC and Nolo publications | Facts summarized in our own words |
 | Listings | Realtor.com, read with HomeHarvest; RentCast as backup | See "Listings" below |
 

@@ -74,7 +74,7 @@ SOURCES = {
     "fed": ("https://markets.newyorkfed.org/api/rates/unsecured/effr/search.json?startDate=2000-07-03&endDate="
             + dt.date.today().isoformat(), "effr.json", False, 1),
     "chr": ([f"https://www.countyhealthrankings.org/sites/default/files/media/document/analytic_data{y}{s}.csv"
-             for y in (2026, 2025, 2024) for s in ("", "_v2", "_0")], "chr.csv", False, 30),
+             for y, s in ((2026, "_v2"), (2026, ""), (2025, "_v3"), (2025, "_v2"), (2025, ""))], "chr.csv", False, 30),
 }
 ELECTIONS_DOI = "doi:10.7910/DVN/VOQCHQ"   # MIT Election Lab, county presidential returns
 
@@ -965,6 +965,7 @@ def main():
     states = {}
     for r in laws.itertuples():
         states[r.state] = {"name": r.name, "car_insurance": int(r.car_insurance) if r.car_insurance else None,
+                           "car_quote": int(r.car_quote_monthly) if getattr(r, "car_quote_monthly", "") else None,
                            "law": {"rent_control": r.rent_control, "just_cause": r.just_cause,
                                    "nonpay_notice_days": r.nonpay_notice_days, "notes": r.notes}}
         if r.state in state_votes:
