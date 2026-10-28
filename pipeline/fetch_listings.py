@@ -59,11 +59,51 @@ def from_homeharvest(row):
         "daysOnMarket": num(g("days_on_mls")), "latitude": num(g("latitude")), "longitude": num(g("longitude")),
         "hoa": num(g("hoa_fee")), "url": g("property_url"),
         "photo": g("primary_photo"),   # link to Realtor.com's own image; the image itself is never copied
+        # property history, used by the page's deal check
+        "listDate": day(g("list_date")), "lastSoldDate": day(g("last_sold_date")), "lastSoldPrice": num(g("last_sold_price")),
+        "estimate": num(g("estimated_value")), "assessed": num(g("assessed_value")), "tax": num(g("tax")),
+        "taxHistory": tax_history(g("tax_history")), "stories": num(g("stories")), "garage": num(g("parking_garage")),
+        "newBuild": True if g("new_construction") in (True,) else None, "text": (str(g("text") or "")[:2000] or None),
     }
-    for k in ("bedrooms", "squareFootage", "lotSize", "yearBuilt", "daysOnMarket"):
+    for k in ("bedrooms", "squareFootage", "lotSize", "yearBuilt", "daysOnMarket", "stories", "garage"):
         if out[k] is not None:
             out[k] = int(out[k])
     return {k: v for k, v in out.items() if v not in (None, "", 0) or k == "bedrooms" and v == 0}
+
+
+def day(x):
+    """A date or timestamp -> 'YYYY-MM-DD'."""
+    return str(x)[:10] if x is not None and str(x)[:4].isdigit() else None
+
+
+def tax_history(h):
+    """HomeHarvest tax history -> [[year, tax, land, building, total], ...], newest first, last 10 years."""
+    if not isinstance(h, list):
+        return None
+    out = []
+    for e in h[:10]:
+        a = e.get("assessment") or {}
+        out.append([e.get("year"), num(e.get("tax")), num(a.get("land")), num(a.get("building")), num(a.get("total"))])
+    return out or None
+
+
+def sold(zipcode, days=180):
+    """Homes sold in the zip in the last `days` days: the comparable sales for the deal check."""
+    from homeharvest import scrape_property
+    df = scrape_property(location=zipcode, listing_type="sold", past_days=days, extra_property_data=False)
+    out = []
+    for row in df.to_dict("records"):
+        r = from_homeharvest(row)
+        g = lambda k: row.get(k) if row.get(k) is not None and str(row.get(k)) != "nan" else None  # noqa: E731
+        price = num(g("sold_price")) or num(g("last_sold_price"))
+        if not price or zipcode not in (r.get("formattedAddress") or zipcode):
+            continue
+        out.append({k: v for k, v in {
+            "address": r.get("formattedAddress"), "type": r.get("propertyType"), "sold": price,
+            "list": r.get("price"), "date": day(g("last_sold_date")), "dom": r.get("daysOnMarket"),
+            "bedrooms": r.get("bedrooms"), "bathrooms": r.get("bathrooms"), "sqft": r.get("squareFootage"),
+            "yearBuilt": r.get("yearBuilt"), "lat": r.get("latitude"), "lon": r.get("longitude")}.items() if v is not None})
+    return out
 
 
 def homeharvest(zipcode, kind):
@@ -119,6 +159,10 @@ def main():
         try:
             data = {"zip": z, "fetched": today.isoformat(), "source": "Realtor.com",
                     "sale": homeharvest(z, "for_sale"), "rent": homeharvest(z, "for_rent")}
+            try:
+                data["sold"] = sold(z)
+            except Exception as e:  # noqa: BLE001
+                print(f"{z}: recent sales failed: {e}", file=sys.stderr)
         except Exception as e:  # noqa: BLE001
             print(f"{z}: Realtor.com (HomeHarvest) failed: {e}", file=sys.stderr)
             stale = not old or (today - dt.date.fromisoformat(old["fetched"])).days >= RENTCAST_DAYS

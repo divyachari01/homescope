@@ -3,7 +3,7 @@
 """Live listings for any zip, as a Vercel serverless function.
 
 GET /api/listings?zip=43201 returns the same JSON shape as listings/<zip>.json: homes for
-sale and for rent from Realtor.com (via HomeHarvest). The page adds each home's facing
+sale and for rent from Realtor.com (via HomeHarvest), plus homes sold in the last 6 months. The page adds each home's facing
 direction, walkable places and noise from OpenStreetMap itself. Vercel's cache keeps each
 zip's answer for 6 hours, so repeat visits are instant.
 """
@@ -22,11 +22,17 @@ import fetch_listings  # noqa: E402
 def build(zipcode):
     # Sale and rental searches run at the same time. The street-map step (facing, walkable
     # places, noise) runs in the visitor's browser instead, which is faster than from here.
-    with ThreadPoolExecutor(2) as pool:
+    with ThreadPoolExecutor(3) as pool:
         sale = pool.submit(fetch_listings.homeharvest, zipcode, "for_sale")
         rent = pool.submit(fetch_listings.homeharvest, zipcode, "for_rent")
-        return {"zip": zipcode, "fetched": dt.date.today().isoformat(), "source": "Realtor.com",
-                "sale": sale.result(), "rent": rent.result()}
+        sold = pool.submit(fetch_listings.sold, zipcode)
+        out = {"zip": zipcode, "fetched": dt.date.today().isoformat(), "source": "Realtor.com",
+               "sale": sale.result(), "rent": rent.result()}
+        try:
+            out["sold"] = sold.result()      # recent sales for the deal check; optional
+        except Exception:  # noqa: BLE001
+            out["sold"] = []
+        return out
 
 
 class handler(BaseHTTPRequestHandler):  # noqa: N801  (name required by Vercel)
