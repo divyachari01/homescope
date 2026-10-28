@@ -102,3 +102,14 @@ ul.tight li { margin: 2px 0; }
 .find input { flex: 1; min-width: 14em; }
 #s-city tr[data-zip] { cursor: pointer; }
 #s-city tr[data-zip]:hover td { background: var(--accent-soft); }
+
+/* sections as tabs: one open at a time */
+.tabs { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 10px; position: sticky; top: 0; z-index: 5; background: var(--bg); scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button { flex: 0 0 auto; background: var(--card); color: var(--ink); border: 1px solid var(--line); font-weight: 500; padding: 6px 14px; border-radius: 99px; }
+.tabs button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+@media (prefers-color-scheme: dark) { .tabs button.on { color: #0f1a16; } }
+body.tabbed details.group { display: none; }
+body.tabbed details.group.on { display: block; }
+body.tabbed details.group > summary { display: none; }
+body.tabbed details.group > section:first-of-type { border-top: 0; }

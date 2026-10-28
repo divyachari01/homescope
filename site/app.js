@@ -112,12 +112,15 @@
       liveCache.set(z, j); liveState.delete(z);
       j.mapState = "loading";
       if (z === zip) { listing = j; renderAll(); }
+      cityHomesChanged(z);
       // then add facing, walkable places and noise from the street map, right here in the browser
       try { await Orient.addTo(j.sale); j.mapState = "done"; } catch (e) { j.mapState = "failed"; }
       if (z === zip) renderListings(inputs());
+      cityHomesChanged(z);
     } catch (e) {
       liveState.set(z, "failed");
       if (z === zip) renderListings(inputs());
+      cityHomesChanged(z);
     }
   }
 
@@ -1428,8 +1431,11 @@
       $("#status").textContent = "";
       $("#results").hidden = true;
       $("#s-city").hidden = false;
-      $("#s-city").innerHTML = `<h2>${esc(label)}, ${st}: ${hits.length} zip code${hits.length > 1 ? "s" : ""}, plus ${list.length - hits.length} within 10 miles</h2>
-        <p class="verdict"><b>${nFit}</b> of ${shown.length} have a typical home in your budget. Tap a row for the full report.</p>
+      cityState.zips = list;
+      $("#s-city").innerHTML = `<h2>Homes for sale in ${esc(label)}, ${st}</h2>
+        <div id="cityHomes"></div>
+        <details class="sub" id="zipCompare" ${cityState.zipOpen ? "open" : ""}><summary>Compare the ${list.length} zip codes in and around ${esc(label)}</summary>
+        <p class="verdict"><b>${nFit}</b> of ${shown.length} have a typical home in your budget. Tap a row for the full zip report.</p>
         <div class="chips" id="cityChips">${["All", ...cities].map(c => `<button type="button" class="${c === cityState.filter ? "on" : ""}" data-c="${esc(c)}">${esc(c)}</button>`).join("")}</div>
         ${factorChips(ZFACT, zOn, "zfact")}
         <div class="row"><label class="note">Sort <select id="citySort">${[["best", "Best overall (in budget)"], ["value", "Cheapest first"], ["school", "Best schools"], ["growth", "Fastest growing"], ["near", "Closest"]].map(([v, l]) => `<option value="${v}" ${v === citySort ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
@@ -1440,11 +1446,118 @@
             <td>${p.school ? p.school + "/10" : ""}</td><td>${p.growth != null ? signed(p.growth) : ""}</td><td>${p.fc1 != null ? signed(p.fc1) : ""}</td>
             <td>${esc(p.hazard || "")}</td><td>${p.rent ? money(p.rent) : ""}</td><td>${p.mi.toFixed(1)}</td></tr>`).join("")}
         </table></div>
-        <p class="note">Score (0-100) averages what you pick, compared with the other zips here that fit your budget. Highlighted rows are in ${esc(label)}.</p>`;
+        <p class="note">Score (0-100) averages what you pick, compared with the other zips here that fit your budget. Highlighted rows are in ${esc(label)}.</p></details>`;
+      $("#zipCompare").ontoggle = e => { cityState.zipOpen = e.target.open; };
+      renderCityHomes();
       $("#citySort").onchange = e => { citySort = e.target.value; renderCity(); };
       $("#s-city").querySelectorAll("[data-c]").forEach(b => b.onclick = () => { cityState.filter = b.dataset.c; renderCity(); });
       $("#s-city").querySelectorAll("#zfact [data-f]").forEach(b => b.onclick = () => { const f = b.dataset.f; zOn.has(f) ? zOn.delete(f) : zOn.add(f); saveSet("hc-zfact", zOn); renderCity(); });
       $("#s-city").querySelectorAll("tr[data-zip]").forEach(tr => tr.onclick = () => { $("#zip").value = tr.dataset.zip; lookup(); window.scrollTo(0, 0); });
+    });
+  }
+
+  // ---------------------------------------------------------------- homes for sale across a city (listing-site view)
+  const cityF = { max: null, beds: 0, baths: 0, type: "All", sqft: 0, nearby: false, sort: "best", shown: 24 };
+  let cityTimer = null;
+  function cityHomesChanged(z) {
+    if (!cityState || $("#s-city").hidden || !(cityState.zips || []).some(p => p.zip === z)) return;
+    clearTimeout(cityTimer); cityTimer = setTimeout(renderCityHomes, 300);
+  }
+  function cityZips() {
+    const zs = (cityState.zips || []).filter(p => p.here).slice(0, 8);
+    if (cityF.nearby) zs.push(...cityState.zips.filter(p => !p.here).sort((a, b) => a.mi - b.mi).slice(0, 12));
+    return zs;
+  }
+  function renderCityHomes() {
+    const el = $("#cityHomes");
+    if (!el || !cityState) return;
+    if (!API) { el.innerHTML = `<p class="note">Live listings aren't set up for this site.</p>`; return; }
+    const zs = cityZips(), o = inputs();
+    zs.forEach(p => { if (!liveCache.has(p.zip) && liveState.get(p.zip) !== "loading" && liveState.get(p.zip) !== "failed") loadLive(p.zip); });
+    const loading = zs.filter(p => !liveCache.has(p.zip) && liveState.get(p.zip) !== "failed").length;
+    // every home for sale in those zips, with what you can afford there
+    const homes = [];
+    for (const p of zs) {
+      const L = liveCache.get(p.zip);
+      if (!L) continue;
+      const st = STATES[p.state] || {}, ins = st.home_ins ? st.home_ins / 4000 : 0.5, tax = p.tax || 1.1;
+      const oz = { ...o, taxRate: tax, insRate: ins, closingPct: (st.closing_fees ?? 1) + 1 + ins + tax / 4 };
+      const zdom = median(L.sale.map(x => x.daysOnMarket).filter(Number.isFinite));
+      for (const s of L.sale) {
+        if (!s.price || ["Land"].includes(s.propertyType)) continue;
+        const max = Calc.maxPrice({ ...oz, hoa: s.hoa || 0 }).price;
+        homes.push({ s, zipRec: p, fits: s.price <= max, max, zdom, pay: Calc.monthly(s.price, { ...oz, hoa: s.hoa || 0 }).total });
+      }
+    }
+    const types = ["All", ...new Set(homes.map(h => LISTING_GROUPS[h.s.propertyType] || h.s.propertyType || "Other"))];
+    const cap = cityF.max ?? Math.round(Calc.maxPrice(o).price / 5000) * 5000;
+    const shown = homes.filter(h => h.s.price <= cap && (h.s.bedrooms ?? 0) >= cityF.beds && (h.s.bathrooms ?? 0) >= cityF.baths
+      && (!cityF.sqft || (h.s.squareFootage ?? 0) >= cityF.sqft) && (cityF.type === "All" || (LISTING_GROUPS[h.s.propertyType] || h.s.propertyType) === cityF.type));
+    // overall score among what's shown
+    const spaceR = rankPct(shown.map(h => h.s.squareFootage)), valueR = rankPct(shown.map(h => h.s.estimate ? h.s.estimate / h.s.price : NaN)),
+      schoolOf = h => h.zipRec.school ? h.zipRec.school * 10 : null;
+    if (work) fetchDrives(shown.filter(h => h.s.latitude).map(h => [h.s.latitude, h.s.longitude])).then(ch => { if (ch) cityHomesChanged(zs[0]?.zip); });
+    for (const h of shown) {
+      const s = h.s, near = s.near, nz = s.noise, mins = work && s.latitude ? drive.get(keyOf(s.latitude, s.longitude)) : null;
+      const vs = vaastuScore({ facing: s.orient?.facing, tjunction: s.orient ? !!s.orient.tjunction : undefined });
+      h.parts = { space: spaceR(s.squareFootage), value: valueR(s.estimate ? s.estimate / s.price : NaN), school: schoolOf(h),
+        shop: near?.grocery?.m != null ? clamp100(100 - (near.grocery.m - 300) / 17) : null,
+        walk: near ? Math.round(WALK.filter(([kk]) => near[kk]?.n > 0).length / WALK.length * 100) : null,
+        commute: mins != null && mins >= 0 ? clamp100(100 - (mins - 10) * 2) : null,
+        quiet: nz ? clamp100(100 - (nz.highway_m != null && nz.highway_m < 300 ? 40 : 0) - (nz.rail_m != null && nz.rail_m < 250 ? 30 : 0) - (nz.airport_km != null && nz.airport_km < 5 ? 30 : 0)) : null,
+        vaastu: vs ? vs.pct : null };
+      h.score = blend(h.parts, new Set([...lOn, "school"]));
+      // quick advice from the listing itself
+      const tips = [];
+      if (s.estimate) { const g = (s.price / s.estimate - 1) * 100; if (g > 8) tips.push(`Priced ${g.toFixed(0)}% above its estimate`); else if (g < -5) tips.push(`Priced ${(-g).toFixed(0)}% below its estimate`); }
+      if (s.daysOnMarket != null && s.daysOnMarket > Math.max(60, 1.5 * (h.zdom || 45))) tips.push(`Listed ${s.daysOnMarket} days: room to negotiate`);
+      else if (s.daysOnMarket != null && s.daysOnMarket <= 7) tips.push("New listing");
+      if (/price (?:reduction|reduced|improvement)|just reduced/i.test(s.text || "")) tips.push("Price already cut");
+      if (s.hoa) tips.push(`HOA ${money(s.hoa)}/mo`);
+      if (mins != null && mins >= 0) tips.push(`${mins} min drive to work`);
+      h.tips = tips;
+    }
+    const sorters = { best: (a, b) => (b.fits - a.fits) || ((b.score ?? -1) - (a.score ?? -1)), low: (a, b) => a.s.price - b.s.price,
+      high: (a, b) => b.s.price - a.s.price, new: (a, b) => (a.s.daysOnMarket ?? 1e9) - (b.s.daysOnMarket ?? 1e9), big: (a, b) => (b.s.squareFootage || 0) - (a.s.squareFootage || 0) };
+    shown.sort(sorters[cityF.sort] || sorters.best);
+    const sel = (id, opts, v) => `<select id="${id}">${opts.map(([val, lab]) => `<option value="${val}" ${String(val) === String(v) ? "selected" : ""}>${lab}</option>`).join("")}</select>`;
+    el.innerHTML = `<div class="note">${loading ? `Loading listings for ${loading} more zip code${loading > 1 ? "s" : ""} (5-30 seconds each the first time)... ` : ""}${homes.length} homes for sale in ${zs.length} zip code${zs.length > 1 ? "s" : ""}.</div>
+      <div class="row" style="margin:8px 0">
+        <label class="note">Up to ${sel("cfMax", [[cap, k(cap) + (cityF.max == null ? " (your budget)" : "")], ...[300, 400, 500, 600, 750, 1000, 1500, 2500].map(v => [v * 1000, k(v * 1000)])], cap)}</label>
+        <label class="note">Beds ${sel("cfBeds", [[0, "Any"], [1, "1+"], [2, "2+"], [3, "3+"], [4, "4+"], [5, "5+"]], cityF.beds)}</label>
+        <label class="note">Baths ${sel("cfBaths", [[0, "Any"], [1, "1+"], [2, "2+"], [3, "3+"]], cityF.baths)}</label>
+        <label class="note">Size ${sel("cfSqft", [[0, "Any"], [1000, "1,000+ sq ft"], [1500, "1,500+"], [2000, "2,000+"], [3000, "3,000+"]], cityF.sqft)}</label>
+        <label class="note">Type ${sel("cfType", types.map(t => [t, t]), cityF.type)}</label>
+        <label class="note">Sort ${sel("cfSort", [["best", "Best match"], ["low", "Price, low to high"], ["high", "Price, high to low"], ["new", "Newest"], ["big", "Largest"]], cityF.sort)}</label>
+        <label class="note"><input type="checkbox" id="cfNear" ${cityF.nearby ? "checked" : ""}> Include nearby towns</label>
+      </div>
+      ${factorChips(LFACT, lOn, "cfFact")}
+      <p class="verdict"><b>${shown.length}</b> home${shown.length === 1 ? "" : "s"} match. ${shown.length ? "Best matches first." : "Try a higher price or fewer filters."}</p>
+      <div class="listings">${shown.slice(0, cityF.shown).map(h => {
+        const s = h.s, id = esc(s.id || s.formattedAddress);
+        return `<div class="listing">
+          ${s.photo && s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener" class="photo"><img src="${esc(s.photo)}" alt="Listing photo" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.remove()"><span>Photo: Realtor.com &middot; open listing</span></a>` : ""}
+          <div class="price">${money(s.price)} ${h.fits ? '<span class="pill">In budget</span>' : ""} ${h.score != null ? `<span class="pill">Score ${h.score}</span>` : ""}</div>
+          <div>${s.bedrooms ?? "?"} bd &middot; ${s.bathrooms ?? "?"} ba${s.squareFootage ? ` &middot; ${s.squareFootage.toLocaleString()} sq ft` : ""} &middot; ${esc(LISTING_GROUPS[s.propertyType] || s.propertyType || "")}</div>
+          <div class="note">${esc(s.formattedAddress || "")}</div>
+          <div class="note">About ${money(h.pay)}/mo${h.zipRec.school ? ` &middot; schools ${h.zipRec.school}/10` : ""}${s.yearBuilt ? ` &middot; built ${s.yearBuilt}` : ""}</div>
+          ${h.tips.length ? `<div class="note"><b>${h.tips.join(" &middot; ")}</b></div>` : ""}
+          ${s.orient?.facing ? `<div class="note">Faces ${DIR_NAMES[s.orient.facing]} &middot; Vaastu ${h.parts.vaastu ?? "?"}%</div>` : ""}
+          <div class="row" style="margin-top:6px"><button type="button" data-cdeal="${id}" data-zip="${h.zipRec.zip}">Deal check</button>
+            <button type="button" class="link" data-copen="${h.zipRec.zip}">Zip report</button></div>
+        </div>`; }).join("")}</div>
+      ${shown.length > cityF.shown ? `<p><button type="button" class="link" id="cfMore">Show more (${shown.length - cityF.shown} left)</button></p>` : ""}`;
+    const on = (id, f) => { const x = el.querySelector("#" + id); if (x) x.onchange = e => { f(e.target); cityF.shown = 24; renderCityHomes(); }; };
+    on("cfMax", t => { cityF.max = Number(t.value); }); on("cfBeds", t => { cityF.beds = Number(t.value); }); on("cfBaths", t => { cityF.baths = Number(t.value); });
+    on("cfSqft", t => { cityF.sqft = Number(t.value); }); on("cfType", t => { cityF.type = t.value; }); on("cfSort", t => { cityF.sort = t.value; });
+    on("cfNear", t => { cityF.nearby = t.checked; });
+    if (el.querySelector("#cfMore")) el.querySelector("#cfMore").onclick = () => { cityF.shown += 24; renderCityHomes(); };
+    el.querySelectorAll("#cfFact [data-f]").forEach(b => b.onclick = () => { const f = b.dataset.f; lOn.has(f) ? lOn.delete(f) : lOn.add(f); saveSet("hc-lfact", lOn); renderCityHomes(); });
+    el.querySelectorAll("[data-copen]").forEach(b => b.onclick = () => { $("#zip").value = b.dataset.copen; lookup(); window.scrollTo(0, 0); });
+    el.querySelectorAll("[data-cdeal]").forEach(b => b.onclick = async () => {
+      const z = b.dataset.zip, s = (liveCache.get(z)?.sale || []).find(x => (x.id || x.formattedAddress) === b.dataset.cdeal);
+      $("#zip").value = z; await lookup();
+      if (s) openDeal(s);
     });
   }
 
@@ -1468,5 +1581,26 @@
     try { localStorage.removeItem("hc-inputs"); } catch (e) { /* ignore */ }
     loadInputs(); if (rec) renderAll();
   });
+  // Turn the folded sections into tabs: one section showing at a time, picked from a row of buttons.
+  (function makeTabs() {
+    const groups = [...document.querySelectorAll("details.group")], nav = $("#tabs");
+    if (!nav || !groups.length) return;
+    const SHORT = { "g-cost": "Costs", "g-future": "Prices", "g-market": "Market", "g-purpose": "Your plan", "g-hood": "Neighbourhood",
+      "g-growth": "Growth", "g-schools": "Schools", "g-risk": "Risks", "g-law": "Law", "g-sun": "Sun" };
+    let cur = null;
+    try { cur = localStorage.getItem("hc-tab"); } catch (e) { /* ignore */ }
+    if (!groups.some(g => g.id === cur)) cur = groups[0].id;
+    nav.innerHTML = groups.map(g => `<button type="button" data-tab="${g.id}">${SHORT[g.id] || g.querySelector("summary").firstChild.textContent}</button>`).join("");
+    const show = id => {
+      cur = id;
+      groups.forEach(g => { g.open = true; g.classList.toggle("on", g.id === id); });
+      nav.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.tab === id));
+      try { localStorage.setItem("hc-tab", id); } catch (e) { /* ignore */ }
+      window.dispatchEvent(new Event("resize"));            // let charts size themselves
+    };
+    nav.querySelectorAll("button").forEach(b => b.onclick = () => show(b.dataset.tab));
+    document.body.classList.add("tabbed");
+    show(cur);
+  })();
   init();
 })();
