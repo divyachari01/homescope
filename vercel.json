@@ -1,0 +1,5 @@
+{
+  "functions": {
+    "api/listings.py": { "maxDuration": 60, "includeFiles": "pipeline/{fetch_listings,orient}.py" }
+  }
+}

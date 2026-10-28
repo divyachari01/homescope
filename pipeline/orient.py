@@ -30,17 +30,22 @@ POI = {   # what counts as "within a 10-minute walk" (800 m)
 }
 
 
+OVERPASS_TIMEOUT = 240     # seconds per try; the live listings function lowers this
+
+
 def overpass(q):
     last = None
-    for attempt in range(6):                     # public servers are often busy: retry and rotate
+    tries = 6 if OVERPASS_TIMEOUT > 60 else 1
+    for attempt in range(tries):                     # public servers are often busy: retry and rotate
         try:
-            r = requests.post(OVERPASS[attempt % len(OVERPASS)], data={"data": q}, timeout=240,
+            r = requests.post(OVERPASS[attempt % len(OVERPASS)], data={"data": q}, timeout=OVERPASS_TIMEOUT,
                               headers={"User-Agent": "homescope (github.com, house orientation)"})
             r.raise_for_status()
             return r.json().get("elements", [])
         except requests.RequestException as e:
             last = e
-            time.sleep(15)
+            if tries > 1:
+                time.sleep(15)
     raise last
 
 

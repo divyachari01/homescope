@@ -30,6 +30,8 @@ pipeline/forecast.py        the machine-learning forecast and its 2022-2026 test
 pipeline/extras.py          location, surrounding area, hazards, market, Fed rate, utilities
 pipeline/fetch_listings.py  listings for watchlist.txt (Realtor.com) and house lookups for inspect.txt
 pipeline/orient.py          estimates which way each listed home faces from OpenStreetMap
+api/listings.py             serverless function: live listings for any zip (deployed on Vercel)
+site/config.js              address of that function
 pipeline/states.csv         hand-kept state table: landlord-tenant law and car insurance
 site/                       the website (index.html, app.js, calc.js, style.css)
 logs/last-build.txt         output of the latest daily build, to see what worked
@@ -42,7 +44,8 @@ logs/last-build.txt         output of the latest daily build, to see what worked
 3. Add these under **Settings > Secrets and variables > Actions**:
    - `CENSUS_API_KEY` (required): a free key from https://api.census.gov/data/key_signup.html.
    - `RENTCAST_API_KEY` (optional): a key from https://app.rentcast.io/app/api (the free plan gives 50 calls a month), used for house lookups and as a backup listings source.
-4. Go to **Actions > Build and deploy > Run workflow**. The first run takes about 30 to 45 minutes because it downloads everything and trains the model, and the site appears at `https://<your-username>.github.io/<repo-name>/`.
+4. For live listings in any zip (optional): sign in at [vercel.com](https://vercel.com) with GitHub, choose **Add New > Project**, import this repository and deploy with the default settings. Vercel runs `api/listings.py` as a free serverless function. Put its address (for example `https://homescope.vercel.app`) in `site/config.js`. Without this, listings show only for the zips in `watchlist.txt`.
+5. Go to **Actions > Build and deploy > Run workflow**. The first run takes about 30 to 45 minutes because it downloads everything and trains the model, and the site appears at `https://<your-username>.github.io/<repo-name>/`.
 
 After that it rebuilds itself every day. You can also link straight to a zip with `?zip=43201` at the end of the address.
 

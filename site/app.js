@@ -87,6 +87,24 @@
   }
 
   // ---------------------------------------------------------------- data access
+  // Live listings for any zip from the serverless function (see api/listings.py); set in config.js.
+  const API = (window.HOMESCOPE_API || "").replace(/\/$/, "");
+  const liveCache = new Map(), liveState = new Map();   // zip -> data; zip -> "loading" | "failed"
+  async function loadLive(z) {
+    if (liveState.get(z) === "loading") return;
+    liveState.set(z, "loading");
+    try {
+      const r = await fetch(`${API}/api/listings?zip=${z}`);
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || r.status);
+      liveCache.set(z, j); liveState.delete(z);
+      if (z === zip) { listing = j; renderListings(inputs()); }
+    } catch (e) {
+      liveState.set(z, "failed");
+      if (z === zip) renderListings(inputs());
+    }
+  }
+
   // Zip data comes in files of ~40 zips (by first 3 digits); keep each file once it's loaded.
   const shards = new Map();
   function getShard(prefix) {
@@ -125,7 +143,8 @@
       rec = shard[zip];
     } catch (e) { rec = null; }
     if (!rec) { $("#results").hidden = true; $("#status").textContent = `No data for ${zip}. It may be a PO box or business-only zip.`; return; }
-    listing = LISTED.includes(zip) ? await getJSON(`data/listings/${zip}.json`).catch(() => null) : null;
+    listing = LISTED.includes(zip) ? await getJSON(`data/listings/${zip}.json`).catch(() => null) : liveCache.get(zip) || null;
+    if (!listing && API) loadLive(zip);
     try { localStorage.setItem("hc-zip", zip); } catch (e) { /* ignore */ }
     history.replaceState(null, "", `?zip=${zip}`);
     target = { type: rec.zhvi_now?.all ? "all" : "custom", custom: rec.zhvi_now?.all ? null : rec.acs?.home_value || 300000 };
@@ -661,6 +680,15 @@
   }
   function renderListings(o) {
     const el = $("#s-listings");
+    if (!listing && API && liveState.get(zip) === "loading") {
+      el.innerHTML = `<h2>Homes for sale in ${zip}</h2><p class="note">Pulling live listings for ${zip}... this takes 5-30 seconds the first time and is instant after that.</p>`;
+      return;
+    }
+    if (!listing && API && liveState.get(zip) === "failed") {
+      el.innerHTML = `<h2>Homes for sale in ${zip}</h2><p class="note">Live listings didn't load (the listings source may be busy). <button type="button" class="link" id="retryLive">Try again</button> or <a href="https://www.realtor.com/realestateandhomes-search/${zip}" target="_blank" rel="noopener">browse ${zip} on Realtor.com</a>.</p>`;
+      $("#retryLive").onclick = () => { liveState.delete(zip); loadLive(zip); renderListings(inputs()); };
+      return;
+    }
     if (!listing) {
       const edit = repoEditLink("watchlist.txt");
       el.innerHTML = `<h2>Homes for sale</h2><p class="note">Live listings are pulled daily for the zips in your watchlist (up to 30).
