@@ -1317,7 +1317,7 @@
     const states = [...new Set(hits.map(p => p.state))];
     if (!hits.length) { $("#status").textContent = `Nothing found for "${q}". Try a city, county, zip, or a full street address.`; return; }
     if (states.length > 1) {
-      $("#status").innerHTML = `Which one? ${states.sort().map(x => `<button type="button" class="link" data-st="${x}">${esc(hits.find(p => p.state === x).city)}, ${x}</button>`).join(" &middot; ")}`;
+      $("#status").innerHTML = `Which one? ${states.sort().map(x => `<button type="button" class="link" data-st="${x}">${esc(isCounty ? hits.find(p => p.state === x).county : hits.find(p => p.state === x).city)}, ${x}</button>`).join(" &middot; ")}`;
       $("#status").querySelectorAll("[data-st]").forEach(b => b.onclick = () => citySearch(q.replace(/,.*$/, ""), b.dataset.st));
       return;
     }
@@ -1352,9 +1352,16 @@
     renderCompare();
     renderShortlist();
   }
+  // Cities inside a county search, biggest first.
+  function cityCounts() {
+    const n = {};
+    homesCtx.zips.filter(p => p.here).forEach(p => { n[p.city] = (n[p.city] || 0) + 1; });
+    return Object.entries(n).sort((a, b) => b[1] - a[1]).slice(0, 12);
+  }
   function homeZips() {
     if (homesCtx.view) return homesCtx.view;            // the zips the map is showing, once you've moved it
-    const zs = homesCtx.zips.filter(p => p.here).slice(0, 8);
+    // a big city or county has many zips: start with the 12 nearest its centre (move the map for more)
+    const zs = homesCtx.zips.filter(p => p.here).sort((a, b) => a.mi - b.mi).slice(0, 12);
     if (F.nearby) zs.push(...homesCtx.zips.filter(p => !p.here).sort((a, b) => a.mi - b.mi).slice(0, 12));
     return zs;
   }
@@ -1457,8 +1464,10 @@
         ${Number.isFinite(medOf("growth")) ? `<span>Population <b>${signed(medOf("growth"))}/yr</b></span>` : ""}
         ${Number.isFinite(medOf("crime")) ? `<span title="${crimeName()} per 100,000 people a year, county level">Crime <b>${crimeLevel(medOf("crime"))}</b> (${medOf("crime").toFixed(1)} ${crimeName().toLowerCase()} per 100k, county)</span>` : ""}
       </div>
-      <div class="row">${homesCtx.zips.filter(p => p.here).slice(0, 8).map(p => `<button type="button" class="chipbtn" data-report="${p.zip}">Area report: ${p.zip}</button>`).join("")}</div>`;
+      ${homesCtx.mode === "county" && !homesCtx.view ? `<div class="row">Cities in ${esc(homesCtx.label)}: ${cityCounts().map(([c, n]) => `<button type="button" class="chipbtn" data-city="${esc(c)}">${esc(c)} (${n} zip${n > 1 ? "s" : ""})</button>`).join("")}</div>` : ""}
+      <div class="row">${homeZips().filter(p => p.here || homesCtx.view).slice(0, 8).map(p => `<button type="button" class="chipbtn" data-report="${p.zip}">Area report: ${p.zip}</button>`).join("")}</div>`;
     $("#areaStrip").querySelectorAll("[data-report]").forEach(b => b.onclick = () => openReport(b.dataset.report));
+    $("#areaStrip").querySelectorAll("[data-city]").forEach(b => b.onclick = () => { $("#zip").value = `${b.dataset.city}, ${homesCtx.st}`; citySearch(b.dataset.city, homesCtx.st); });
 
     const types = ["All", ...new Set(homes.map(h => typeOf(h.s)))];
     const sel = (id, opts, v) => `<select id="${id}">${opts.map(([val, lab]) => `<option value="${val}" ${String(val) === String(v) ? "selected" : ""}>${lab}</option>`).join("")}</select>`;
