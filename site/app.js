@@ -1380,10 +1380,10 @@
     shown.sort(noneInBudget && F.sort === "best" ? sorters.low : sorters[F.sort] || sorters.best);
 
     // one line about the area
-    const here = homesCtx.zips.filter(p => p.here), medOf = key => median(here.map(p => p[key]).filter(Number.isFinite));
+    const here = homesCtx.view || homesCtx.zips.filter(p => p.here), medOf = key => median(here.map(p => p[key]).filter(Number.isFinite));
     const hz = here.map(p => p.hazard).filter(Boolean), mk = here.map(p => p.market).filter(Boolean);
     const mode = a => a.sort((x, y) => a.filter(v => v === y).length - a.filter(v => v === x).length)[0];
-    $("#areaStrip").innerHTML = `<h2>${esc(homesCtx.label)}${homesCtx.mode !== "zip" ? `, ${homesCtx.st}` : ""}</h2>
+    $("#areaStrip").innerHTML = `<h2>${homesCtx.view ? "Homes in the map area" : `${esc(homesCtx.label)}${homesCtx.mode !== "zip" ? `, ${homesCtx.st}` : ""}`}</h2>
       <div class="facts">
         ${Number.isFinite(medOf("value")) ? `<span>Typical home <b>${k(medOf("value"))}</b></span>` : ""}
         ${mk.length ? `<span>${esc(mode(mk))}</span>` : ""}
