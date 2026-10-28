@@ -13,8 +13,8 @@ FHFA
   downloaded fhfa
 Census
   downloaded zip_county
-  ACS 2025 not available: Expecting value: line 1 column 1 (char 0)
-  ACS 2024 not available: Expecting value: line 1 column 1 (char 0)
-  ACS 2023 not available: Expecting value: line 1 column 1 (char 0)
-  ACS 2022 not available: Expecting value: line 1 column 1 (char 0)
+  ACS 2025 not available: HTTP 200, reply: '<html style="font-size: 14px;">\n\n<head>\n    <title>Missing Key</title>\n    <link rel="icon" type="
+  ACS 2024 not available: HTTP 200, reply: '<html style="font-size: 14px;">\n\n<head>\n    <title>Missing Key</title>\n    <link rel="icon" type="
+  ACS 2023 not available: HTTP 200, reply: '<html style="font-size: 14px;">\n\n<head>\n    <title>Missing Key</title>\n    <link rel="icon" type="
+  ACS 2022 not available: HTTP 200, reply: '<html style="font-size: 14px;">\n\n<head>\n    <title>Missing Key</title>\n    <link rel="icon" type="
 ERROR: no ACS 5-year data could be loaded
