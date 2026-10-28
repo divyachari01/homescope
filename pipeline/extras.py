@@ -20,13 +20,14 @@ HAZARDS = {
 EARTH_RADIUS_MI = 3958.8
 
 
-def read_zipped_table(path, sep=None):
-    """First csv/txt inside a zip file as a DataFrame (all text)."""
+def read_zipped_table(path, sep=None, header="infer", member=None):
+    """A csv/txt inside a zip file (the named member, else the first one) as a DataFrame (all text)."""
     with zipfile.ZipFile(path) as z:
-        name = next(n for n in z.namelist() if n.lower().endswith((".csv", ".txt")))
+        name = member or next(n for n in z.namelist() if n.lower().endswith((".csv", ".txt")))
         with z.open(name) as f:
             data = f.read()
-    return pd.read_csv(io.BytesIO(data), sep=sep, engine="python" if sep is None else "c", dtype=str)
+    return pd.read_csv(io.BytesIO(data), sep=sep, engine="python" if sep is None else "c", dtype=str, header=header,
+                       quoting=3 if header is None else 0)
 
 
 # ---------------------------------------------------------------- location and surrounding area
@@ -275,7 +276,26 @@ def urban_all(session, url, cache_path):
     return df
 
 
-def district_grades(seda_csv):
+def district_growth(pool_csv):
+    """SEDA pooled file -> each district's learning rate: how much scores rise per grade, relative
+    to the national average (0 = keeps pace). Averaged over subjects, all students."""
+    df = pd.read_csv(pool_csv, dtype=str)
+    df.columns = [c.strip().lower() for c in df.columns]
+    cols = list(df.columns)
+    idc = next((c for c in cols if c in ("sedaadmin", "leaid", "sedalea")), None)
+    if "subgroup" in df:
+        df = df[df["subgroup"].str.lower().isin(["all", "all students"])]
+    grd = [c for c in cols if c.startswith("cs_mn_grd") and not c.endswith("_se") and "_se_" not in c]
+    val = next((c for c in grd if c.endswith("_eb")), None) or next((c for c in grd if c.endswith("_ol")), None) or (grd[0] if grd else None)
+    if not idc or not val:
+        raise ValueError(f"SEDA pool columns not recognised: {cols[:30]}")
+    df[val] = pd.to_numeric(df[val], errors="coerce")
+    out = df.groupby(idc)[val].mean()
+    out.index = out.index.astype(str).str.zfill(7)
+    return out
+
+
+def district_grades(seda_csv, pool_csv=None):
     """Stanford Education Data Archive district scores -> national percentile and A-F grade.
     Uses the latest year, averaged over grades and subjects (cohort-standardized scale, so
     districts in different states are comparable)."""
@@ -311,6 +331,11 @@ def district_grades(seda_csv):
     g["pct"] = (g["score"].rank(pct=True) * 100).round(0)
     g["grade"] = pd.cut(g["pct"], [-1, 20, 40, 60, 80, 101], labels=["F", "D", "C", "B", "A"]).astype(str)
     g.index = g.index.astype(str).str.zfill(7)
+    if pool_csv is not None and "growth" not in g:
+        try:
+            g["growth"] = district_growth(pool_csv).reindex(g.index)
+        except Exception as e:  # noqa: BLE001
+            print(f"  WARNING: SEDA learning rates skipped: {e!r}")
     # Also rank within the state (district id starts with the state code) and give both
     # ranks as a 1-10 score, the scale most school-rating sites use.
     g["spct"] = (g.groupby(g.index.str[:2])["score"].rank(pct=True) * 100).round(0)

@@ -67,7 +67,11 @@ SOURCES = {
     "nri": (["https://hazards.fema.gov/nri/Content/StaticDocuments/DataDownload//NRI_Table_CensusTracts/NRI_Table_CensusTracts.zip",
              "https://hazards.fema.gov/nri/Content/StaticDocuments/DataDownload/NRI_Table_CensusTracts/NRI_Table_CensusTracts.zip"],
             "nri_tracts.zip", False, 90),
+    # Place names for every zip (fills in the city where Zillow has none). GeoNames, CC BY 4.0.
+    "geonames": ("https://download.geonames.org/export/zip/US.zip", "geonames_us.zip", False, 90),
     "seda": ("https://stacks.stanford.edu/file/hm970gr1371/seda_admindist_annual_cs_2025.1.csv", "seda_admindist.csv", False, 90),
+    # pooled across years: includes each district's learning rate (score gain per grade)
+    "seda_pool": ("https://stacks.stanford.edu/file/hm970gr1371/seda_admindist_pool_cs_2025.1.csv", "seda_admindist_pool.csv", False, 90),
     "realtor": ("https://econdata.s3-us-west-2.amazonaws.com/Reports/Core/RDC_Inventory_Core_Metrics_Zip_History.csv",
                 "realtor_zip.csv", False, 7),
     "redfin": ("https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_market_tracker/zip_code_market_tracker.tsv000.gz",
@@ -900,7 +904,12 @@ def main():
             log(f"  WARNING: school test results skipped: {e!r}")
         sd = fetch("seda")
         if sd:
-            dgrades = extras.district_grades(sd)
+            try:
+                pool = fetch("seda_pool")
+            except Exception:  # noqa: BLE001
+                pool = None
+            dgrades = extras.district_grades(sd, pool)
+            log(f"  district progress scores: {int(dgrades['g10'].notna().sum()) if 'g10' in dgrades else 0}")
             asof["schools"] = f"SEDA 2025.1 ({int(dgrades['year'].iloc[0]) if dgrades['year'].notna().any() else ''})"
         schools, near = extras.schools_near(points, sdir, list(d.index))
         log(f"  schools: {len(schools)} in directory")
@@ -963,6 +972,21 @@ def main():
         log(f"  WARNING: forecast skipped: {e!r}")
         log(traceback.format_exc())
 
+    # ---------- place names for zips that Zillow doesn't cover
+    gn = {}
+    try:
+        gp = fetch("geonames")
+        if gp:
+            g = extras.read_zipped_table(gp, sep="\t", header=None, member="US.txt")
+            for r in g.itertuples(index=False):
+                cty = r[5] if isinstance(r[5], str) else ""
+                if cty and not cty.endswith(("County", "Parish", "Borough", "Census Area", "Municipality")):
+                    cty += " Parish" if r[4] == "LA" else " County"
+                gn[str(r[1]).zfill(5)] = (r[2], r[4], cty)          # place, state code, county
+            log(f"  place names for {len(gn)} zips (GeoNames)")
+    except Exception as e:  # noqa: BLE001
+        log(f"  WARNING: place names skipped: {e!r}")
+
     # ---------- write zip shards
     log("Writing zip files")
     mk_index = {z: g.sort_values("month") for z, g in mk.groupby("zip")} if mk is not None else {}
@@ -975,6 +999,10 @@ def main():
             m = meta.loc[z]
             rec.update({"city": m.get("City"), "state": m.get("State"), "county": m.get("CountyName"),
                         "metro": m.get("Metro")})
+        if z in gn:
+            for key, v in zip(("city", "state", "county"), gn[z]):
+                if not rec.get(key) and isinstance(v, str) and v:
+                    rec[key] = v
         cf = zip_county.get(z)
         if cf:
             rec["county_fips"] = cf[0]
