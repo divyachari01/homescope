@@ -345,7 +345,7 @@ def load_elections():
         except Exception as e:  # noqa: BLE001
             log(f"  WARNING: elections download failed: {e}")
     if not path.exists():
-        return {}, {}
+        return load_elections_github()
     with open(path, encoding="utf-8", errors="replace") as fh:
         sep = "\t" if "\t" in fh.readline() else ","
     el = pd.read_csv(path, sep=sep, dtype=str)
@@ -381,6 +381,55 @@ def load_elections():
     return county, state
 
 
+GH_ELECTIONS = "https://raw.githubusercontent.com/tonmcg/US_County_Level_Election_Results_08-24/master/"
+
+
+def load_elections_github():
+    """Backup: county presidential results 2008-2024 from a public GitHub collection."""
+    rows = []
+    try:
+        for y in (2024, 2020):
+            p = RAW / f"pres_{y}.csv"
+            if not p.exists() and not OFFLINE:
+                download(GH_ELECTIONS + f"{y}_US_County_Level_Presidential_Results.csv", p)
+            d = pd.read_csv(p, dtype={"county_fips": str})
+            rows.append(pd.DataFrame({"year": y, "fips": d["county_fips"].str.zfill(5),
+                                      "dem": d["votes_dem"], "rep": d["votes_gop"], "tot": d["total_votes"]}))
+        p = RAW / "pres_2016.csv"
+        if not p.exists() and not OFFLINE:
+            download(GH_ELECTIONS + "2016_US_County_Level_Presidential_Results.csv", p)
+        d = pd.read_csv(p, dtype={"combined_fips": str})
+        rows.append(pd.DataFrame({"year": 2016, "fips": d["combined_fips"].str.zfill(5),
+                                  "dem": d["votes_dem"], "rep": d["votes_gop"], "tot": d["total_votes"]}))
+        p = RAW / "pres_08_16.csv"
+        if not p.exists() and not OFFLINE:
+            download(GH_ELECTIONS + "US_County_Level_Presidential_Results_08-16.csv", p)
+        d = pd.read_csv(p, dtype={"fips_code": str})
+        for y in (2008, 2012):
+            rows.append(pd.DataFrame({"year": y, "fips": d["fips_code"].str.zfill(5),
+                                      "dem": d[f"dem_{y}"], "rep": d[f"gop_{y}"], "tot": d[f"total_{y}"]}))
+        log("  elections from the GitHub backup")
+    except Exception as e:  # noqa: BLE001
+        log(f"  WARNING: election backup failed: {e!r}")
+        if not rows:
+            return {}, {}
+    el = pd.concat(rows)
+    for c in ("dem", "rep", "tot"):
+        el[c] = pd.to_numeric(el[c], errors="coerce")
+    el = el.dropna()
+    el["state"] = el["fips"].str[:2].map(lambda f: STATES.get(f, ("",))[0])
+
+    def pack(g, key):
+        out = {}
+        for k, sub in g.groupby(key):
+            sub = sub.groupby("year")[["dem", "rep", "tot"]].sum().sort_index()
+            out[k] = {"years": sub.index.astype(int).tolist(),
+                      "dem": (sub["dem"] / sub["tot"] * 100).round(1).tolist(),
+                      "rep": (sub["rep"] / sub["tot"] * 100).round(1).tolist()}
+        return out
+    return pack(el, "fips"), pack(el, "state")
+
+
 def load_chr(path):
     """County Health Rankings analytic file -> {county fips: (violent crime per 100k, release year)}."""
     df = pd.read_csv(path, dtype=str, low_memory=False)
@@ -389,14 +438,19 @@ def load_chr(path):
         df = df.iloc[1:]
     fcol = next((c for c in df.columns if "5-digit fips" in c.lower() or c.lower() == "fipscode"), None)
     ccol = next((c for c in df.columns if "violent crime raw value" in c.lower() or c.lower() == "v043_rawvalue"), None)
+    if not ccol:   # newer releases may drop violent crime; homicides is the closest measure they keep
+        ccol = next((c for c in df.columns if "homicide" in c.lower() and "raw value" in c.lower()), None)
+    log(f"  crime measure used: {ccol}")
     if not fcol or not ccol:
-        raise ValueError(f"expected columns not found; first columns: {list(df.columns)[:8]}")
+        raise ValueError("no crime column; columns mentioning crime/homicide: "
+                         f"{[c for c in df.columns if 'crime' in c.lower() or 'homicide' in c.lower()][:10]}")
     ycol = next((c for c in df.columns if "release year" in c.lower() or c.lower() == "year"), None)
     df = df[df[fcol].str.fullmatch(r"\d{4,5}", na=False)]
     df["fips"] = df[fcol].str.zfill(5)
     df = df[~df["fips"].str.endswith("000")]
     df["crime"] = pd.to_numeric(df[ccol], errors="coerce")
     year = df[ycol].dropna().iloc[0] if ycol else ""
+    year = f"{year}, {'homicides' if 'homicide' in ccol.lower() else 'violent crime'}"
     return {r.fips: round(r.crime, 1) for r in df.dropna(subset=["crime"]).itertuples()}, year
 
 

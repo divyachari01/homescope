@@ -75,6 +75,7 @@
     const fees = (listing.sale || []).filter(s => s.propertyType === "Condo" && s.hoa).map(s => s.hoa);
     return fees.length >= 3 ? Math.round(Calc.percentile(fees, 50)) : 0;
   }
+  const crimeName = () => /homicide/i.test(NAT?.asof?.crime || "") ? "Homicides" : "Violent crime";
   const utilities = () => rec?.util ? (rec.util.electric || 0) + (rec.util.gas || 0) : 0;
 
   function currentRate(years) {
@@ -221,7 +222,7 @@
       Number.isFinite(ind.income_change) ? `${signed(ind.income_change)} in 10 yrs after inflation` : ""));
     if (rec.acs?.renter_share != null) out.push(card("Renters", pct(rec.acs.renter_share, 0) + " of homes",
       `${pct(rec.acs.rent_vacancy)} of rentals sit empty`));
-    if (ind.crime != null) out.push(card("Violent crime (county)", Math.round(ind.crime) + " per 100k", pctSub(p.crime, "Higher than")));
+    if (ind.crime != null) out.push(card(`${crimeName()} (county)`, Math.round(ind.crime) + " per 100k", pctSub(p.crime, "Higher than")));
     const car = STATES[rec.state]?.car_insurance;
     if (car) out.push(card("Car insurance (state avg)", money(car) + "/yr", `About ${money(car / 12)}/mo per car, NAIC 2024`));
     const v = rec.votes, sv = STATES[rec.state]?.votes;
@@ -558,7 +559,7 @@
           <tr><td>Unemployment</td><td>${pct(a.unemployment)}</td><td></td></tr>
           <tr><td>Population</td><td>${Math.round(a.pop).toLocaleString()}</td><td></td></tr>
           <tr><td>Typical year homes were built</td><td>${a.year_built || "n/a"}</td><td></td></tr>
-          ${ind.crime != null ? `<tr><td>Violent crime per 100k (county)</td><td>${Math.round(ind.crime)}</td><td></td></tr>` : ""}
+          ${ind.crime != null ? `<tr><td>${crimeName()} per 100k (county)</td><td>${Math.round(ind.crime)}</td><td></td></tr>` : ""}
           ${STATES[rec.state]?.car_insurance ? `<tr><td>Car insurance per car (state avg, 2024)</td><td>${money(STATES[rec.state].car_insurance)}/yr</td><td></td></tr>` : ""}
         </table>
         <div>
@@ -734,7 +735,7 @@
         ${row("College degree+", a.college, r.college, v => pct(v, 0))}
         ${row("Renters", a.renter_share, r.renter_share, v => pct(v, 0))}
         ${row("Yearly price growth, 10 yrs", ind.growth10, r.growth10, v => signed(v))}
-        ${row("Violent crime per 100k (county)", ind.crime, r.crime, v => v == null ? "n/a" : Math.round(v))}
+        ${row(`${crimeName()} per 100k (county)`, ind.crime, r.crime, v => v == null ? "n/a" : Math.round(v))}
       </table></div>
       <p class="note">Average of the ${r.n} zip${r.n === 1 ? "" : "s"} whose centre is within 5 miles, weighted by population. Crime is only published by county and police force, so it differs here only when nearby zips are in another county.</p>`;
   }

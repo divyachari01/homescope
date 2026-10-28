@@ -121,11 +121,20 @@ def features(P, y, acs, macro, votes, static, market):
 
 
 def fit(X, y, q):
+    """Quantile model on the inputs that have any data (empty inputs are dropped)."""
+    cols = [c for c in X.columns if X[c].notna().any() and X[c].nunique() > 1]
+    X = X[cols]
     cat = [c == "state" for c in X.columns]
     m = HistGradientBoostingRegressor(loss="quantile", quantile=q, max_iter=200, learning_rate=0.05,
                                       max_leaf_nodes=31, min_samples_leaf=200, l2_regularization=1.0,
                                       categorical_features=cat, random_state=0)
-    return m.fit(X, y)
+    m.fit(X, y)
+    m.cols_ = cols
+    return m
+
+
+def predict(m, X):
+    return m.predict(X[m.cols_])
 
 
 def run(P, acs, macro, votes, static, market, log=print):
@@ -161,7 +170,7 @@ def run(P, acs, macro, votes, static, market, log=print):
             Xte, yte = dataset(h, [o], latest_target=T)
             if Xtr is None or Xte is None or len(Xtr) < 1000:
                 continue
-            q = {qq: fit(Xtr, ytr, qq).predict(Xte) for qq in QUANTILES}
+            q = {qq: predict(fit(Xtr, ytr, qq), Xte) for qq in QUANTILES}
             per_year = lambda e: float(np.nanmean(np.abs(e))) / h * 100   # noqa: E731
             res = {"horizon": h, "from": o, "to": T, "partial": T == now, "zips": int(len(yte)),
                    "model_error": round(per_year(q[0.5] - yte), 2),
@@ -178,16 +187,17 @@ def run(P, acs, macro, votes, static, market, log=print):
         Xall, yall = dataset(h, range(FIRST_ORIGIN, last_full - h + 1))
         n_origins = len({y for y in range(FIRST_ORIGIN, last_full - h + 1) if y in rows})
         models = {qq: fit(Xall, yall, qq) for qq in QUANTILES}
-        p = np.column_stack([models[qq].predict(X_now) for qq in QUANTILES])
+        p = np.column_stack([predict(models[qq], X_now) for qq in QUANTILES])
         p.sort(axis=1)                                           # keep low <= mid <= high
         preds[h] = pd.DataFrame((np.exp(p) - 1) * 100, index=X_now.index, columns=["low", "mid", "high"])
         summary["horizons"][h] = {"train_rows": int(len(yall)), "train_years": n_origins}
         if h == 5:
             # Which inputs matter most: shuffle one input at a time and see how much worse the model gets.
             idx = np.random.default_rng(0).choice(len(Xall), min(20000, len(Xall)), replace=False)
-            imp = permutation_importance(models[0.5], Xall.iloc[idx], yall.iloc[idx], n_repeats=2, random_state=0)
+            cols = models[0.5].cols_
+            imp = permutation_importance(models[0.5], Xall.iloc[idx][cols], yall.iloc[idx], n_repeats=2, random_state=0)
             order = np.argsort(imp.importances_mean)[::-1]
-            top = [(LABELS.get(Xall.columns[j], Xall.columns[j]), float(imp.importances_mean[j])) for j in order]
+            top = [(LABELS.get(cols[j], cols[j]), float(imp.importances_mean[j])) for j in order]
             total = sum(v for _, v in top if v > 0) or 1
             summary["drivers"] = [[name, round(v / total * 100, 1)] for name, v in top[:10] if v > 0]
     return preds, past, summary
