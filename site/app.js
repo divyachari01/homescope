@@ -461,9 +461,9 @@
     return `<div class="asof">Machine-learning model trained on every US zip from ${M.first_origin || 2014} on. It learns how price growth depends on price trends, rates, the stock market, income, rents, jobs, education, renters, crime, politics, landlord law and insurance.</div>
       <div class="chart"><canvas id="cOutlook"></canvas></div>
       <div class="table-wrap"><table><tr><th>Forecast for</th><th>Low</th><th>Likely</th><th>High</th><th>Typical value then</th></tr>${rows}</table></div>
-      <p class="note">Low and high are the model's 10th and 90th percentile: the price change should land between them about 8 times in 10.</p>
+      <p class="note">Low and high are set so that about 8 in 10 outcomes should land between them. The model's raw ranges were too narrow in past tests (especially through the 2020-2022 boom), so they were widened by ${["1", "3", "5"].map(h => M.horizons?.[h]?.widened_pts != null ? `${M.horizons[h].widened_pts} pts (${h} yr)` : "").filter(Boolean).join(", ")} to match how far real outcomes strayed.</p>
       <details class="sub"><summary>How well did it predict 2022 to ${yr}?</summary>
-        <p class="note">Each row pretends it's the start year, trains only on what was known then, predicts, and compares with what actually happened across all zips. Error is the average miss in percentage points per year. "Trend only" just extends each zip's own 10-year trend.
+        <p class="note">Each row pretends it's the start year, trains only on what was known then, predicts, and compares with what actually happened across all zips. Error is the average miss in percentage points per year. "Trend only" just extends each zip's own 10-year trend. "Inside range" is for the model's raw range, before the widening above.
         ${beat.length ? `The model beat the trend-only guess in ${wins} of ${beat.length} completed tests.` : ""}</p>
         <div class="table-wrap"><table><tr><th>Period</th><th>Horizon</th><th>Model error</th><th>Trend-only error</th><th>Inside range</th></tr>${bt}</table></div>
         ${mine ? `<h3>This zip, 1 year ahead</h3><div class="table-wrap"><table><tr><th>Year</th><th>Predicted range</th><th>Likely</th><th>Actual</th><th>Inside?</th></tr>${mine}</table></div>` : ""}

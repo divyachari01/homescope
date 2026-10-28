@@ -7,10 +7,12 @@ and T-junctions (a street that ends right at the house and points straight at it
 Feng Shui treats as a concern. This is an estimate; a satellite view confirms it.
 """
 import math
+import time
 
 import requests
 
-OVERPASS = "https://overpass-api.de/api/interpreter"
+OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter",
+            "https://overpass.private.coffee/api/interpreter"]
 ROADS = "residential|unclassified|tertiary|secondary|primary|living_street|trunk|tertiary_link|secondary_link"
 DIRS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
 
@@ -21,9 +23,18 @@ def fetch_streets(points, pad=0.004):
     lons = [p[1] for p in points]
     bbox = f"{min(lats) - pad},{min(lons) - pad},{max(lats) + pad},{max(lons) + pad}"
     q = f'[out:json][timeout:90];way["highway"~"^({ROADS})$"]({bbox});out geom;'
-    r = requests.post(OVERPASS, data={"data": q}, timeout=180,
-                      headers={"User-Agent": "homescope (github.com, house orientation)"})
-    r.raise_for_status()
+    last = None
+    for attempt in range(6):                     # public servers are often busy: retry and rotate
+        try:
+            r = requests.post(OVERPASS[attempt % len(OVERPASS)], data={"data": q}, timeout=180,
+                              headers={"User-Agent": "homescope (github.com, house orientation)"})
+            r.raise_for_status()
+            break
+        except requests.RequestException as e:
+            last = e
+            time.sleep(15)
+    else:
+        raise last
     ways = []
     for el in r.json().get("elements", []):
         geom = [(g["lat"], g["lon"]) for g in el.get("geometry", [])]

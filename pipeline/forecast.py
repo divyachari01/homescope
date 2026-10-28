@@ -162,6 +162,7 @@ def run(P, acs, macro, votes, static, market, log=print):
     X_now = rows[now]
     trend = lambda X, h: h * np.log1p(X["growth_10y"].fillna(X["growth_5y"]).fillna(0))  # noqa: E731
     for h in HORIZONS:
+        scores = []   # how far each past outcome fell outside its predicted range (for widening it)
         # --- walk-forward test, like using the model in real time: to "predict" year T we stand
         # at year T-h and train only on outcomes that were already known then.
         for T in range(BACKTEST_FROM, now + 1):
@@ -177,6 +178,8 @@ def run(P, acs, macro, votes, static, market, log=print):
                    "trend_error": round(per_year(trend(Xte, h) - yte), 2),
                    "inside_range": round(float(np.mean((yte >= q[0.1]) & (yte <= q[0.9]))) * 100, 1)}
             summary["backtest"].append(res)
+            if T != now:
+                scores += list(np.maximum(q[0.1] - yte.to_numpy(), yte.to_numpy() - q[0.9]))
             log(f"  {h}-yr test {o}->{T}: model off by {res['model_error']} pts/yr, "
                 f"trend-only off by {res['trend_error']}, actual inside range {res['inside_range']}%")
             if h == 1:   # keep each zip's 1-year calls so the page can show predicted vs actual
@@ -189,8 +192,13 @@ def run(P, acs, macro, votes, static, market, log=print):
         models = {qq: fit(Xall, yall, qq) for qq in QUANTILES}
         p = np.column_stack([predict(models[qq], X_now) for qq in QUANTILES])
         p.sort(axis=1)                                           # keep low <= mid <= high
+        # Past tests showed the raw 10-90% range was too narrow, so widen it by the amount
+        # that would have put 80% of past outcomes inside (a "conformal" correction).
+        widen = max(0.0, float(np.percentile(scores, 80))) if scores else 0.0
+        p[:, 0] -= widen
+        p[:, 2] += widen
         preds[h] = pd.DataFrame((np.exp(p) - 1) * 100, index=X_now.index, columns=["low", "mid", "high"])
-        summary["horizons"][h] = {"train_rows": int(len(yall)), "train_years": n_origins}
+        summary["horizons"][h] = {"widened_pts": round((np.exp(widen) - 1) * 100, 1), "train_rows": int(len(yall)), "train_years": n_origins}
         if h == 5:
             # Which inputs matter most: shuffle one input at a time and see how much worse the model gets.
             idx = np.random.default_rng(0).choice(len(Xall), min(20000, len(Xall)), replace=False)
