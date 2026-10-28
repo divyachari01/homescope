@@ -98,9 +98,9 @@
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || r.status);
       liveCache.set(z, j); liveState.delete(z);
+      j.mapState = "loading";
       if (z === zip) { listing = j; renderListings(inputs()); }
       // then add facing, walkable places and noise from the street map, right here in the browser
-      j.mapState = "loading";
       try { await Orient.addTo(j.sale); j.mapState = "done"; } catch (e) { j.mapState = "failed"; }
       if (z === zip) renderListings(inputs());
     } catch (e) {

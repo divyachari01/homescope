@@ -1,56 +1,125 @@
 // Copyright (c) 2026 Divya Chari
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
-// Browser version of pipeline/orient.py: from OpenStreetMap streets, estimate which way each
+// Browser version of pipeline/orient.py, reading OpenStreetMap data from OpenFreeMap's vector
+// tiles (fast and cached worldwide). From the streets it estimates which way each
 // listed home faces (the direction to its nearest street), flag corner lots and T-junctions,
 // count everyday places within a 10-minute walk, and find nearby highways, railways and airports.
 const Orient = (() => {
-  const SERVERS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter"];
-  const ROADS = "residential|unclassified|tertiary|secondary|primary|living_street|trunk|tertiary_link|secondary_link";
   const DIRS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-  const POI = {
-    grocery: t => ["supermarket", "grocery", "greengrocer"].includes(t.shop),
-    park: t => t.leisure === "park",
-    transit: t => t.highway === "bus_stop" || ["station", "tram_stop", "halt"].includes(t.railway) || t.public_transport === "station",
-    pharmacy: t => t.amenity === "pharmacy",
-    food: t => ["cafe", "restaurant"].includes(t.amenity),
-    school: t => t.amenity === "school",
-  };
 
-  async function overpass(q) {
-    let last;
-    for (const url of SERVERS) {
-      try {
-        const r = await fetch(url, { method: "POST", body: "data=" + encodeURIComponent(q),
-          headers: { "Content-Type": "application/x-www-form-urlencoded" } });
-        if (r.ok) return (await r.json()).elements || [];
-        last = new Error(r.status);
-      } catch (e) { last = e; }
+  // ---- map data from OpenFreeMap vector tiles (OpenStreetMap data, OpenMapTiles schema)
+  let tileUrl = null;
+  async function tileTemplate() {
+    if (!tileUrl) tileUrl = (await (await fetch("https://tiles.openfreemap.org/planet")).json()).tiles[0];
+    return tileUrl;
+  }
+  // Minimal Mapbox Vector Tile reader: returns {layer: [{type, tags, rings}]} with rings in [lat, lon].
+  function readTile(buf, z, x, y) {
+    const b = new Uint8Array(buf); let pos = 0;
+    const varint = () => { let r = 0, s = 0, c; do { c = b[pos++]; r += (c & 0x7f) * 2 ** s; s += 7; } while (c >= 0x80); return r; };
+    const skip = w => { if (w === 0) varint(); else if (w === 1) pos += 8; else if (w === 2) pos += varint(); else if (w === 5) pos += 4; };
+    const str = (s, e) => new TextDecoder().decode(b.subarray(s, e));
+    const zz = n => (n % 2 ? -(n + 1) / 2 : n / 2);
+    const out = {};
+    while (pos < b.length) {
+      const tag = varint();
+      if (tag >> 3 !== 3 || (tag & 7) !== 2) { skip(tag & 7); continue; }
+      const end = varint() + pos; let name = "", extent = 4096; const keys = [], vals = [], feats = [];
+      while (pos < end) {
+        const t = varint(), f = t >> 3, w = t & 7;
+        if (f === 1 && w === 2) { const l = varint(); name = str(pos, pos + l); pos += l; }
+        else if (f === 3 && w === 2) { const l = varint(); keys.push(str(pos, pos + l)); pos += l; }
+        else if (f === 4 && w === 2) {
+          const ve = varint() + pos; let v = null;
+          while (pos < ve) {
+            const vt = varint(), vf = vt >> 3;
+            if (vf === 1) { const l = varint(); v = str(pos, pos + l); pos += l; }
+            else if (vf === 2) { v = new DataView(b.buffer, b.byteOffset + pos, 4).getFloat32(0, true); pos += 4; }
+            else if (vf === 3) { v = new DataView(b.buffer, b.byteOffset + pos, 8).getFloat64(0, true); pos += 8; }
+            else if (vf === 4 || vf === 5) v = varint();
+            else if (vf === 6) v = zz(varint());
+            else if (vf === 7) v = !!varint();
+            else skip(vt & 7);
+          }
+          vals.push(v);
+        } else if (f === 2 && w === 2) {
+          const fe = varint() + pos; let type = 0, tags = [], geom = [];
+          while (pos < fe) {
+            const ft = varint(), ff = ft >> 3;
+            if (ff === 2 || ff === 4) { const pe = varint() + pos; const arr = []; while (pos < pe) arr.push(varint()); if (ff === 2) tags = arr; else geom = arr; }
+            else if (ff === 3) type = varint();
+            else skip(ft & 7);
+          }
+          feats.push({ type, tags, geom });
+        } else if (f === 5) extent = varint();
+        else skip(w);
+      }
+      const n = 2 ** z, toLatLon = (gx, gy) => {
+        const lon = (x + gx / extent) / n * 360 - 180;
+        const lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + gy / extent) / n))) * 180 / Math.PI;
+        return [lat, lon];
+      };
+      out[name] = feats.map(ft => {
+        const props = {};
+        for (let i = 0; i + 1 < ft.tags.length; i += 2) props[keys[ft.tags[i]]] = vals[ft.tags[i + 1]];
+        const rings = []; let cx = 0, cy = 0, ring = null, i = 0;
+        while (i < ft.geom.length) {
+          const cmd = ft.geom[i] & 7, cnt = ft.geom[i] >> 3; i++;
+          if (cmd === 7) { if (ring && ring.length) ring.push(ring[0]); continue; }
+          for (let k = 0; k < cnt; k++) {
+            cx += zz(ft.geom[i++]); cy += zz(ft.geom[i++]);
+            if (cmd === 1) { ring = []; rings.push(ring); }
+            ring.push(toLatLon(cx, cy));
+          }
+        }
+        return { type: ft.type, props, rings };
+      });
     }
-    throw last;
+    return out;
+  }
+  const tileOf = (lat, lon, z) => {
+    const n = 2 ** z, r = lat * Math.PI / 180;
+    return [Math.floor((lon + 180) / 360 * n), Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n)];
+  };
+  async function getTiles(points, z, ring) {
+    const want = new Map();
+    for (const [lat, lon] of points) {
+      const [tx, ty] = tileOf(lat, lon, z);
+      for (let dx = -ring; dx <= ring; dx++) for (let dy = -ring; dy <= ring; dy++) want.set(`${tx + dx}/${ty + dy}`, [tx + dx, ty + dy]);
+    }
+    const tpl = await tileTemplate();
+    const list = [...want.values()].slice(0, 80);
+    return Promise.all(list.map(async ([tx, ty]) => {
+      const r = await fetch(tpl.replace("{z}", z).replace("{x}", tx).replace("{y}", ty));
+      return r.ok ? readTile(await r.arrayBuffer(), z, tx, ty) : {};
+    }));
   }
 
-  async function fetchArea(points, pad = 0.01) {
-    const lats = points.map(p => p[0]), lons = points.map(p => p[1]);
-    const box = `${Math.min(...lats) - pad},${Math.min(...lons) - pad},${Math.max(...lats) + pad},${Math.max(...lons) + pad}`;
-    const big = `${Math.min(...lats) - 0.06},${Math.min(...lons) - 0.08},${Math.max(...lats) + 0.06},${Math.max(...lons) + 0.08}`;
-    const q = `[out:json][timeout:60];way["highway"~"^(${ROADS})$"](${box});out geom;` +
-      `(nwr["shop"~"^(supermarket|grocery|greengrocer)$"](${box});nwr["leisure"="park"](${box});` +
-      `node["highway"="bus_stop"](${box});nwr["railway"~"^(station|tram_stop|halt)$"](${box});` +
-      `nwr["amenity"~"^(pharmacy|cafe|restaurant|school)$"](${box}););out center;` +
-      `(way["highway"~"^(motorway|trunk)$"](${box});way["railway"="rail"]["service"!~"."](${box}););out geom;` +
-      `nwr["aeroway"="aerodrome"]["iata"](${big});out center;`;
-    const ways = [], places = Object.fromEntries(Object.keys(POI).map(k => [k, []])), noise = { highway: [], rail: [] }, airports = [];
-    for (const el of await overpass(q)) {
-      const t = el.tags || {}, geom = (el.geometry || []).map(g => [g.lat, g.lon]);
-      if (t.aeroway === "aerodrome") { const c = el.center || el; airports.push([c.lat, c.lon, t.name || ""]); }
-      else if (["motorway", "trunk"].includes(t.highway) && geom.length > 1) noise.highway.push(geom);
-      else if (t.railway === "rail" && geom.length > 1) noise.rail.push(geom);
-      else if (t.highway && t.highway !== "bus_stop" && geom.length > 1) ways.push({ name: t.name || "", pts: geom });
-      else {
-        const c = el.center || (el.lat != null ? el : null);
-        if (c) for (const [k, test] of Object.entries(POI)) if (test(t)) places[k].push([c.lat, c.lon]);
+  const ROAD = new Set(["primary", "secondary", "tertiary", "minor", "trunk"]);
+  const centre = rings => { const r = rings[0] || []; let a = 0, b = 0; r.forEach(p => { a += p[0]; b += p[1]; }); return r.length ? [a / r.length, b / r.length] : null; };
+  async function fetchArea(points) {
+    const [near, wide] = await Promise.all([getTiles(points, 14, 1), getTiles(points, 10, 0)]);
+    const ways = [], places = Object.fromEntries(["grocery", "park", "transit", "pharmacy", "food", "school"].map(k => [k, []]));
+    const noise = { highway: [], rail: [] }, airports = [];
+    for (const t of near) {
+      for (const f of t.transportation_name || []) if (ROAD.has(f.props.class) && f.props.name) f.rings.forEach(r => r.length > 1 && ways.push({ name: f.props.name, pts: r }));
+      for (const f of t.transportation || []) {
+        if (f.props.class === "motorway" || f.props.class === "trunk") f.rings.forEach(r => r.length > 1 && noise.highway.push(r));
+        if (f.props.class === "rail" && (!f.props.service) && f.props.subclass === "rail") f.rings.forEach(r => r.length > 1 && noise.rail.push(r));
+      }
+      for (const f of t.park || []) { const c = centre(f.rings); if (c) places.park.push(c); }
+      for (const f of t.poi || []) {
+        const c = f.rings[0]?.[0]; if (!c) continue;
+        const cl = f.props.class, sub = f.props.subclass;
+        if (cl === "grocery" || ["supermarket", "grocery", "greengrocer"].includes(sub)) places.grocery.push(c);
+        else if (cl === "park") places.park.push(c);
+        else if (cl === "bus" || ["station", "halt", "tram_stop", "bus_stop"].includes(sub)) places.transit.push(c);
+        else if (cl === "pharmacy" || sub === "pharmacy") places.pharmacy.push(c);
+        else if (["cafe", "restaurant", "fast_food"].includes(cl) || ["cafe", "restaurant"].includes(sub)) places.food.push(c);
+        else if (cl === "school" || sub === "school") places.school.push(c);
       }
     }
+    for (const t of wide) for (const f of t.aerodrome_label || []) if (f.props.iata) { const c = f.rings[0]?.[0]; if (c) airports.push([c[0], c[1], f.props.name || f.props["name:en"] || ""]); }
     return { ways, places, noise, airports };
   }
 
