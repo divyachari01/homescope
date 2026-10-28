@@ -4,7 +4,7 @@
   const DEFAULTS = {
     income: 100000, debts: 300, cash: 60000, save: 1500, rent0: 1500, downPct: 20, years: 30, rate: "",
     housingShare: 28, dtiCap: 36, taxRate: "", insRate: 0.5, pmiRate: 0.5, maintRate: 1, closingPct: 3,
-    sellPct: 6, hoa: 0, incomeGrowth: 3, invReturn: 5, rateShift: 0, H: 10, invPremium: 0.75, invDown: 25,
+    sellPct: 6, hoa: "", incomeGrowth: 3, invReturn: 5, rateShift: 0, H: 10, invPremium: 0.75, invDown: 25,
     vacancy: 5, mgmt: 8, hackRent: "", strNightly: 150, strOcc: 55, strFees: 25,
   };
   const TYPES = [
@@ -17,7 +17,7 @@
     "Land": "Land",
   };
 
-  let NAT = null, STATES = {}, LISTED = [];
+  let NAT = null, STATES = {}, LISTED = [], INSPECTED = {};
   let rec = null, zip = "", target = { type: "all", custom: null }, listing = null, listFilter = "All", listSort = "price";
   const charts = {};
 
@@ -55,6 +55,8 @@
     for (const [key, def] of Object.entries(DEFAULTS)) if (o[key] === null || Number.isNaN(o[key])) o[key] = def === "" ? null : def;
     o.ratePct = o.rate ?? currentRate(o.years);
     o.taxRate = o.taxRate ?? (rec?.acs?.tax_rate || 1.1);
+    o.hoaAuto = o.hoa === null;
+    o.hoa = o.hoa ?? autoHoa();
     o.cash0 = o.cash;
     o.rentGrowth = rentGrowth();
     return o;
@@ -67,6 +69,14 @@
     if (!(a > 0 && b > 0)) return 3;
     return Math.min(8, Math.max(0, (Math.pow(b / a, 1 / 5) - 1) * 100));
   }
+  // Typical condo HOA in this zip from current listings (only used for condos when HOA is left blank).
+  function autoHoa() {
+    if (target.type !== "condo" || !listing) return 0;
+    const fees = (listing.sale || []).filter(s => s.propertyType === "Condo" && s.hoa).map(s => s.hoa);
+    return fees.length >= 3 ? Math.round(Calc.percentile(fees, 50)) : 0;
+  }
+  const utilities = () => rec?.util ? (rec.util.electric || 0) + (rec.util.gas || 0) : 0;
+
   function currentRate(years) {
     if (!NAT) return 6.5;
     if (Number(years) === 15 && NAT.rate15_latest) return NAT.rate15_latest.value;
@@ -84,6 +94,7 @@
     try {
       [NAT, STATES] = await Promise.all([getJSON("data/national.json"), getJSON("data/states.json")]);
       LISTED = await getJSON("data/listings/index.json").catch(() => []);
+      INSPECTED = await getJSON("data/listings/properties.json").catch(() => ({}));
     } catch (e) {
       $("#status").textContent = "Data files are missing. Run the build (see README) and reload.";
       return;
@@ -163,13 +174,17 @@
     const o = inputs();
     renderHead();
     renderSummary(o);
+    renderMarket();
     renderPrices();
     renderBuying(o);
     renderTiming(o);
     renderPurpose(o);
     renderHood();
+    renderHazards(o);
     renderLaw();
+    renderSun();
     renderListings(o);
+    renderInspected();
     renderSchools();
   }
 
@@ -262,6 +277,35 @@
     $("#realToggle").onchange = e => { realPrices = e.target.checked; renderPrices(); };
   }
 
+  function alignMonthly(series, labels) {
+    const [y0, m0] = series.start.split("-").map(Number);
+    const map = new Map(series.v.map((v, i) => { const mm = m0 - 1 + i; return [`${y0 + Math.floor(mm / 12)}-${String(mm % 12 + 1).padStart(2, "0")}`, v]; }));
+    return labels.map(l => map.get(l) ?? null);
+  }
+
+  // 5 / 10 / 15 / 20% down side by side for the selected home.
+  function downTable(tp, o) {
+    const opts = [5, 10, 15, 20];
+    const cols = opts.map(dp => {
+      const m = Calc.monthly(tp, { ...o, downPct: dp }), cash = tp * (dp + o.closingPct) / 100;
+      const share = m.total / (o.income / 12) * 100, dti = (m.total + o.debts) / (o.income / 12) * 100;
+      const ok = cash <= o.cash && share <= o.housingShare && dti <= o.dtiCap;
+      const why = cash > o.cash ? "Cash short" : share > o.housingShare || dti > o.dtiCap ? "Payment too high" : "Yes";
+      return { dp, m, cash, share, ok, why };
+    });
+    const row = (label, f) => `<tr><td>${label}</td>${cols.map(c => `<td${c.dp === o.downPct ? ' style="font-weight:650"' : ""}>${f(c)}</td>`).join("")}</tr>`;
+    return `<div class="table-wrap"><table>
+      <tr><th></th>${cols.map(c => `<th>${c.dp}% down</th>`).join("")}</tr>
+      ${row("Cash up front (incl. closing)", c => k(c.cash))}
+      ${row("Loan", c => k(c.m.loan))}
+      ${row("Mortgage insurance / mo", c => c.m.pmi ? money(c.m.pmi) : "None")}
+      ${row("Monthly payment", c => money(c.m.total))}
+      ${row("Share of income", c => pct(c.share, 0))}
+      ${row("Works for you?", c => c.ok ? '<span class="pill">Yes</span>' : `<span class="pill warn">${c.why}</span>`)}
+    </table></div>
+    <p class="note">Under 20% down, lenders add mortgage insurance (${o.pmiRate}%/yr of the loan here) until you reach about 22% equity. FHA loans allow 3.5% down with their own insurance.</p>`;
+  }
+
   // ---------------------------------------------------------------- buying power and monthly cost
   function renderBuying(o) {
     const tp = targetPrice(o);
@@ -280,7 +324,7 @@
       .map(t => `<option value="${t[0]}" ${t[0] === target.type ? "selected" : ""}>${t[1]}${t[0] !== "custom" ? " - " + k(rec.zhvi_now[t[0]]) : ""}</option>`).join("");
     $("#s-buying").innerHTML = `
       <h2>Rates, buying power and monthly cost</h2>
-      <div class="asof">Freddie Mac 30-year average rate, weekly since 1971, latest ${NAT.rate30_latest.date}: ${NAT.rate30_latest.value}%</div>
+      <div class="asof">Freddie Mac 30-year average rate since 1971, latest ${NAT.rate30_latest.date}: ${NAT.rate30_latest.value}%${NAT.fed ? `. Fed funds rate (New York Fed) since 2000, latest ${NAT.asof.fed}: ${NAT.fed.v[NAT.fed.v.length - 1]}%. Mortgage rates follow the Fed's rate loosely, through longer-term bond yields` : ""}</div>
       <div class="chart"><canvas id="cRates"></canvas></div>
       <p class="note">Over any 12 months since 1971, the 30-year rate moved by a full point or more ${pct(moves.shareOver1pt, 0)} of the time. In 8 of 10 such years the change was between ${signed(moves.p10, 1).replace("%", "")} and ${signed(moves.p90, 1).replace("%", "")} points.</p>
       <div class="two">
@@ -288,6 +332,8 @@
           <h3>If rates move</h3>
           <div class="table-wrap"><table><tr><th>Rate</th><th>Max you can buy</th><th>Payment on selected home</th></tr>${rows}</table></div>
           <p class="note">Each 1-point rise in rates cuts your buying power by about ${k(perPoint)} (when income is the limit).</p>
+          <h3>Down payment options</h3>
+          ${downTable(tp, o)}
         </div>
         <div>
           <h3>Monthly cost of a home</h3>
@@ -303,16 +349,22 @@
             ${m.hoa ? `<tr><td>HOA</td><td>${money(m.hoa)}</td></tr>` : ""}
             <tr class="best"><td><b>Monthly total</b></td><td><b>${money(m.total)}</b></td></tr>
             <tr><td>Share of your income</td><td>${pct(m.total / (o.income / 12) * 100)}</td></tr>
+            <tr><td>Upkeep set-aside (${o.maintRate}%/yr)</td><td>${money(tp * o.maintRate / 1200)}</td></tr>
+            ${utilities() ? `<tr><td>Utilities: electric ${money(rec.util.electric || 0)} + gas ${money(rec.util.gas || 0)} (zip average)</td><td>${money(utilities())}</td></tr>` : ""}
+            <tr><td><b>All-in per month</b></td><td><b>${money(m.total + tp * o.maintRate / 1200 + utilities())}</b></td></tr>
           </table>
-          <p class="note">Plus about ${money(tp * o.maintRate / 1200)}/mo set aside for upkeep. Tax rate ${rec.acs?.tax_rate && !Number(document.querySelector('[data-k="taxRate"]').value) ? "is this zip's Census median" : "is your setting"}.</p>
+          <p class="note">Property tax is about ${money(m.tax * 12)} a year. The rate ${rec.acs?.tax_rate && !Number(document.querySelector('[data-k="taxRate"]').value) ? "is what owners in this zip actually pay vs their home values (Census), so state, county and city taxes and local assessment practice are all included" : "is your setting"}.
+          ${o.hoaAuto && o.hoa ? ` HOA is the typical condo fee in this zip's current listings.` : ""}${o.hoaAuto && !o.hoa && target.type === "condo" ? " Condo HOA fees aren't known for this zip; enter one under More assumptions." : ""}
+          Water and trash aren't included (no national data).</p>
         </div>
       </div>`;
     const start = NAT.rate30.start.split("-").map(Number);
     const labels = rates.map((_, i) => { const mm = start[1] - 1 + i; return `${start[0] + Math.floor(mm / 12)}-${String(mm % 12 + 1).padStart(2, "0")}`; });
     makeChart("cRates", { type: "line", data: { labels,
-      datasets: [{ label: "30-year rate", data: rates, borderColor: css("--c2"), pointRadius: 0, borderWidth: 1.5 }] },
+      datasets: [{ label: "30-year mortgage rate", data: rates, borderColor: css("--c2"), pointRadius: 0, borderWidth: 1.5 },
+        ...(NAT.fed ? [{ label: "Fed funds rate", data: alignMonthly(NAT.fed, labels), borderColor: css("--c3"), pointRadius: 0, borderWidth: 1.5 }] : [])] },
       options: { scales: { x: { ticks: { maxTicksLimit: 10, callback: function (v) { return this.getLabelForValue(v).slice(0, 4); } } },
-        y: { ticks: { callback: v => v + "%" } } }, plugins: { legend: { display: false } } } });
+        y: { ticks: { callback: v => v + "%" } } }, plugins: { legend: { display: !!NAT.fed } } } });
     $("#targetType").onchange = e => {
       target.type = e.target.value;
       if (target.type === "custom" && !target.custom) target.custom = Math.round(tp);
@@ -512,6 +564,7 @@
         <div>
           <b>Housing mix</b> <span class="note">(share of all homes by building type)</span>
           <div class="mix">${bars}</div>
+          ${ringTable(a, ind)}
           ${rec.gent ? `<h3>Gentrification check: ${rec.gent}</h3><p class="note">${gentText[rec.gent] || ""} A rule of thumb from housing research, not a verdict.</p>` : ""}
         </div>
       </div>`;
@@ -561,7 +614,7 @@
   function renderListings(o) {
     const el = $("#s-listings");
     if (!listing) {
-      el.innerHTML = `<h2>Listings</h2><p class="note">Live listings are pulled weekly for the zips in <code>watchlist.txt</code> (up to 6 on RentCast's free plan). To add ${zip}, put it on its own line in that file on GitHub and run the workflow.
+      el.innerHTML = `<h2>Listings</h2><p class="note">Live listings are pulled weekly for the zips in <code>watchlist.txt</code> (up to 5 on RentCast's free plan). To add ${zip}, put it on its own line in that file on GitHub and run the workflow.
         Meanwhile: <a href="https://www.zillow.com/homes/${zip}_rb/" target="_blank" rel="noopener">browse ${zip} on Zillow</a>.</p>`;
       return;
     }
@@ -598,12 +651,183 @@
         <div class="note">${esc(r.group)} &middot; ${r.tier}${r.s.squareFootage >= 5000 ? " &middot; Large (5,000+ sq ft)" : ""}</div>
         <div class="note">${r.s.bedrooms ?? "?"} bd &middot; ${r.s.bathrooms ?? "?"} ba${r.s.squareFootage ? ` &middot; ${r.s.squareFootage.toLocaleString()} sq ft` : ""}${r.s.yearBuilt ? ` &middot; built ${r.s.yearBuilt}` : ""}${r.s.daysOnMarket != null ? ` &middot; ${r.s.daysOnMarket} days listed` : ""}</div>
         <div>Owner cost ${money(r.pay)}/mo${r.s.hoa ? ` (incl. HOA ${money(r.s.hoa)})` : ""}</div>
+        ${r.s.latitude ? `<div class="note"><a href="https://www.google.com/maps/@${r.s.latitude},${r.s.longitude},60m/data=!3m1!1e3" target="_blank" rel="noopener">Satellite view</a> (to check which way it faces)</div>` : ""}
         ${mode !== "live" && r.inv ? `<div class="note">If rented at ~${money(r.estRent)}: cash flow ${money(r.inv.cashFlow)}/mo, cap rate ${pct(r.inv.capRate, 1)}</div>` : ""}
       </div>`).join("")}</div>
       ${rows.length > 60 ? `<p class="note">Showing 60 of ${rows.length}.</p>` : ""}
       ${beds ? `<h3>Rentals listed now</h3><table><tr><th>Size</th><th>Listings</th><th>Median rent</th></tr>${beds}</table>` : ""}`;
     el.querySelectorAll("#chips button").forEach(b => b.onclick = () => { listFilter = b.dataset.g; renderListings(inputs()); });
     $("#listSort").onchange = e => { listSort = e.target.value; renderListings(inputs()); };
+  }
+
+  // ---------------------------------------------------------------- buyer's / seller's market
+  function renderMarket() {
+    const m = rec.market;
+    if (!m) { $("#s-market").innerHTML = ""; return; }
+    const y = m.year_ago || {};
+    const line = (lab, key, fmt) => m[key] == null ? "" : `<tr><td>${lab}</td><td>${fmt(m[key])}</td><td>${y[key] == null ? "" : fmt(y[key])}</td></tr>`;
+    $("#s-market").innerHTML = `<h2>Buyer's or seller's market: ${m.label || "n/a"}</h2>
+      <div class="asof">Redfin, homes sold in the 3 months to ${m.month}${y.label ? `. A year earlier it was: ${y.label.toLowerCase()}` : ""}</div>
+      <div class="table-wrap"><table><tr><th></th><th>Now</th><th>A year ago</th></tr>
+        ${line("Months of supply (under 4 favours sellers, over 6 favours buyers)", "months_supply", v => v.toFixed(1))}
+        ${line("Typical days to go under contract", "dom", v => Math.round(v))}
+        ${line("Sale price vs asking", "sale_to_list", v => pct(v * 100, 1))}
+        ${line("Sold above asking", "above_list", v => pct(v * 100, 0))}
+        ${line("Listings with a price cut", "price_drops", v => pct(v * 100, 0))}
+        ${line("Homes sold", "homes_sold", v => Math.round(v))}
+      </table></div>
+      <p class="note">In a buyer's market you have room to negotiate on price and repairs; in a seller's market expect competing offers.</p>`;
+  }
+
+  // ---------------------------------------------------------------- surrounding area
+  function ringTable(a, ind) {
+    const r = rec.ring;
+    if (!r) return "";
+    const row = (lab, here, there, fmt) => here == null && there == null ? "" : `<tr><td>${lab}</td><td>${fmt(here)}</td><td>${fmt(there)}</td></tr>`;
+    return `<h3>Compared with the area around it</h3>
+      <div class="table-wrap"><table><tr><th></th><th>This zip</th><th>Within 5 miles</th></tr>
+        ${row("Median household income", a.income, r.income, v => money(v))}
+        ${row("Poverty rate", a.poverty, r.poverty, v => pct(v))}
+        ${row("College degree+", a.college, r.college, v => pct(v, 0))}
+        ${row("Renters", a.renter_share, r.renter_share, v => pct(v, 0))}
+        ${row("Yearly price growth, 10 yrs", ind.growth10, r.growth10, v => signed(v))}
+        ${row("Violent crime per 100k (county)", ind.crime, r.crime, v => v == null ? "n/a" : Math.round(v))}
+      </table></div>
+      <p class="note">Average of the ${r.n} zip${r.n === 1 ? "" : "s"} whose centre is within 5 miles, weighted by population. Crime is only published by county and police force, so it differs here only when nearby zips are in another county.</p>`;
+  }
+
+  // ---------------------------------------------------------------- natural hazards and the building
+  function ageFlags(year) {
+    if (!year) return [];
+    const f = [];
+    if (year < 1940) f.push("Built before 1940: check wiring (knob-and-tube), plumbing and foundation.");
+    if (year < 1978) f.push("Built before 1978: lead paint is possible (federal disclosure required).");
+    if (year < 1981) f.push("Built before about 1980: asbestos may be in insulation, tiles or siding.");
+    if (year >= 1965 && year <= 1973) f.push("1965-1973: aluminium wiring was common; ask an electrician.");
+    if (year >= 1978 && year <= 1995) f.push("1978-1995: polybutylene water pipes were used in some homes.");
+    const age = new Date().getFullYear() - year;
+    if (age > 20) f.push(`Asphalt-shingle roofs last about 20-30 years. If the roof is original it is ${age} years old, so ask for its age and permits.`);
+    return f;
+  }
+  function renderHazards(o) {
+    const h = rec.hazard, yb = rec.acs?.year_built;
+    if (!h && !yb) { $("#s-hazards").innerHTML = ""; return; }
+    const tp = targetPrice(o);
+    const flood = (h?.top || []).some(([n, , lab]) => /flood/i.test(n) && /high/i.test(lab || ""));
+    $("#s-hazards").innerHTML = `<h2>Natural hazards and the building</h2>
+      ${h ? `<div class="asof">FEMA National Risk Index for the neighbourhoods in this zip</div>
+        <p class="verdict">Overall risk: <b>${h.label || "n/a"}</b>${h.risk != null ? ` (${Math.round(h.risk)} of 100, higher than ${Math.round(h.risk)}% of US neighbourhoods)` : ""}.
+        ${h.loss_rate != null && tp ? ` Expected yearly damage to buildings here averages ${pct(h.loss_rate, 2)} of their value, about ${money(tp * h.loss_rate / 100)}/yr on the selected home.` : ""}</p>
+        <table><tr><th>Hazard</th><th>Score</th><th>Rating</th></tr>
+          ${h.top.map(([n, v, lab]) => `<tr><td>${esc(n)}</td><td>${Math.round(v)}</td><td>${lab || ""}</td></tr>`).join("")}</table>
+        <p class="note">${flood ? "Flood risk is notable here: regular home insurance doesn't cover floods, so price in flood insurance. " : ""}Check the exact address on <a href="https://msc.fema.gov/portal/search?AddressQuery=${zip}" target="_blank" rel="noopener">FEMA's flood maps</a>.</p>` : ""}
+      ${yb ? `<h3>Age of homes here (typical year built: ${yb})</h3><ul class="note">${ageFlags(yb).map(f => `<li>${f}</li>`).join("")}</ul>` : ""}
+      <p class="note">Roof age, structure and what a specific house is built from aren't in any public database. An inspection covers these, and the "Houses you're checking" section below shows what RentCast has on record for addresses you add.</p>`;
+  }
+
+  // ---------------------------------------------------------------- sun path, Vaastu and Feng Shui
+  const DIRS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+  const DIR_NAMES = { N: "North", NE: "North-east", E: "East", SE: "South-east", S: "South", SW: "South-west", W: "West", NW: "North-west" };
+  let sunInputs = { facing: "", kitchen: "", bedroom: "", prayer: "", shape: "", fs: {} };
+  try { sunInputs = Object.assign(sunInputs, JSON.parse(localStorage.getItem("hc-sun") || "{}")); } catch (e) { /* ignore */ }
+  function sunTimes(lat, dec) {
+    const r = Math.PI / 180, x = Math.sin(dec * r) / Math.cos(lat * r);
+    const az = Math.acos(Math.max(-1, Math.min(1, x))) / r;           // sunrise azimuth from north
+    const h0 = Math.acos(Math.max(-1, Math.min(1, -Math.tan(lat * r) * Math.tan(dec * r)))) / r;
+    return { rise: az, set: 360 - az, noon: 90 - Math.abs(lat - dec), hours: 2 * h0 / 15 };
+  }
+  const compass = a => DIRS[Math.round(((a % 360) + 360) % 360 / 45) % 8];
+  function sunSvg(lat) {
+    const cx = 130, cy = 130, pt = (a, rr) => [cx + rr * Math.sin(a * Math.PI / 180), cy - rr * Math.cos(a * Math.PI / 180)];
+    const seasons = [["Summer (Jun 21)", 23.44, 100, "--c2"], ["Spring / autumn", 0, 78, "--c1"], ["Winter (Dec 21)", -23.44, 56, "--c3"]];
+    let g = `<circle cx="${cx}" cy="${cy}" r="112" fill="none" stroke="${css("--line")}"/>`;
+    for (const [d, lab] of [[0, "N"], [90, "E"], [180, "S"], [270, "W"]]) { const [x, y] = pt(d, 122); g += `<text x="${x}" y="${y + 4}" text-anchor="middle" font-size="12" fill="${css("--muted")}">${lab}</text>`; }
+    for (const [, dec, rr, col] of seasons) {
+      const t = sunTimes(lat, dec), [x1, y1] = pt(t.rise, rr), [x2, y2] = pt(t.set, rr);
+      const through = lat >= dec ? 180 : 0, large = ((t.set - t.rise + 360) % 360) > 180 ? 1 : 0;
+      g += `<path d="M ${x1} ${y1} A ${rr} ${rr} 0 ${large} ${through === 180 ? 1 : 0} ${x2} ${y2}" fill="none" stroke="${css(col)}" stroke-width="3"/>`;
+      g += `<circle cx="${x1}" cy="${y1}" r="4" fill="${css(col)}"/><circle cx="${x2}" cy="${y2}" r="4" fill="none" stroke="${css(col)}" stroke-width="2"/>`;
+    }
+    return `<svg viewBox="0 0 260 260" width="240" height="240" role="img" aria-label="Sun path through the year">${g}</svg>`;
+  }
+  function vaastu(si) {
+    const out = [];
+    if (si.facing) out.push(["Entrance / facing", ["N", "E", "NE"].includes(si.facing) ? "good" : si.facing === "SW" ? "poor" : ["S", "SE"].includes(si.facing) ? "mixed" : "ok",
+      ["N", "E", "NE"].includes(si.facing) ? `${DIR_NAMES[si.facing]}-facing is the most favoured in Vaastu.` : si.facing === "SW" ? "South-west-facing is traditionally the least favoured." : `${DIR_NAMES[si.facing]}-facing is acceptable; Vaastu puts more weight on where the door sits along that side.`]);
+    if (si.kitchen) out.push(["Kitchen", si.kitchen === "SE" ? "good" : si.kitchen === "NW" ? "ok" : ["NE", "SW"].includes(si.kitchen) ? "poor" : "mixed", "Vaastu places the kitchen in the south-east (fire corner), with north-west as the alternative; north-east and south-west are avoided."]);
+    if (si.bedroom) out.push(["Main bedroom", si.bedroom === "SW" ? "good" : ["S", "W"].includes(si.bedroom) ? "ok" : si.bedroom === "NE" ? "poor" : "mixed", "The main bedroom is placed in the south-west for stability."]);
+    if (si.prayer) out.push(["Prayer room", si.prayer === "NE" ? "good" : ["N", "E"].includes(si.prayer) ? "ok" : "mixed", "The prayer room belongs in the north-east."]);
+    if (si.shape) out.push(["Plot shape", si.shape === "square" || si.shape === "rect" ? "good" : "poor", "Square or rectangular plots are preferred; cut or irregular corners (especially north-east) are avoided."]);
+    return out;
+  }
+  const FS_ITEMS = {
+    aligned: "Front door lines up straight with a back door or big back window",
+    tjunction: "House sits at the end of a T-junction or a straight road points at it",
+    stairs: "Staircase faces the front door directly",
+    bathdoor: "A bathroom is right next to or facing the front door",
+    garage: "A bedroom sits over the garage",
+    below: "House sits below road level or at the bottom of a slope",
+    irregular: "Irregular, L-shaped or missing-corner floor plan",
+  };
+  function renderSun() {
+    if (rec.lat == null) { $("#s-sun").innerHTML = ""; return; }
+    const lat = rec.lat, si = sunInputs;
+    const t = [["Summer (Jun 21)", sunTimes(lat, 23.44)], ["Spring / autumn", sunTimes(lat, 0)], ["Winter (Dec 21)", sunTimes(lat, -23.44)]];
+    const opt = (key, extra = "") => `<select data-sun="${key}"><option value="">Not sure</option>${DIRS.map(d => `<option value="${d}" ${si[key] === d ? "selected" : ""}>${DIR_NAMES[d]}</option>`).join("")}${extra}</select>`;
+    const facingLight = si.facing ? {
+      N: "The front gets little direct sun; the back garden gets the most.", S: "The front gets sun most of the day, strongest in winter.",
+      E: "The front gets morning sun; the back gets the afternoon.", W: "The front gets afternoon and evening sun, which is hot in summer.",
+      NE: "The front gets early morning sun only.", NW: "The front gets late-evening sun in summer.", SE: "The front gets morning and midday sun.", SW: "The front gets the hot afternoon sun.",
+    }[si.facing] : "";
+    const vs = vaastu(si), fsHits = Object.keys(FS_ITEMS).filter(kk => si.fs[kk]);
+    const tag = v => v === "good" ? '<span class="pill">Good</span>' : v === "poor" ? '<span class="pill warn">Avoid</span>' : v === "mixed" ? '<span class="pill warn">Not ideal</span>' : '<span class="pill">OK</span>';
+    $("#s-sun").innerHTML = `<h2>Sun, Vaastu and Feng Shui</h2>
+      <div class="asof">Sun path for latitude ${lat.toFixed(2)} (centre of this zip)</div>
+      <div class="two">
+        <div style="text-align:center">${sunSvg(lat)}<div class="note">Filled dot = sunrise, open dot = sunset. Outer arc summer, inner arc winter.</div></div>
+        <div class="table-wrap"><table><tr><th></th><th>Sunrise</th><th>Sunset</th><th>Noon height</th><th>Daylight</th></tr>
+          ${t.map(([lab, x]) => `<tr><td>${lab}</td><td>${compass(x.rise)} (${Math.round(x.rise)}&deg;)</td><td>${compass(x.set)} (${Math.round(x.set)}&deg;)</td><td>${Math.round(x.noon)}&deg;</td><td>${x.hours.toFixed(1)} h</td></tr>`).join("")}
+        </table></div>
+      </div>
+      <h3>Check a house</h3>
+      <p class="note">Listings don't say which way a house faces. Use the satellite link on a listing to see which way the front door faces, then fill these in.</p>
+      <div class="grid-inputs">
+        <label>House faces (front door side)${opt("facing")}</label>
+        <label>Kitchen is in the${opt("kitchen")}</label>
+        <label>Main bedroom is in the${opt("bedroom")}</label>
+        <label>Prayer room is in the${opt("prayer")}</label>
+        <label>Plot shape<select data-sun="shape"><option value="">Not sure</option>
+          ${[["square", "Square"], ["rect", "Rectangle"], ["irregular", "Irregular / cut corner"]].map(([v, l]) => `<option value="${v}" ${si.shape === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+      </div>
+      ${facingLight ? `<p class="note"><b>Sunlight:</b> ${facingLight}</p>` : ""}
+      ${vs.length ? `<h3>Vaastu</h3><table>${vs.map(([lab, v, txt]) => `<tr><td>${lab}</td><td style="white-space:normal;text-align:left">${tag(v)} ${txt}</td></tr>`).join("")}</table>` : ""}
+      <h3>Feng Shui</h3>
+      <div class="note">Tick anything that applies to the house:</div>
+      ${Object.entries(FS_ITEMS).map(([kk, lab]) => `<label class="note" style="display:block"><input type="checkbox" data-fs="${kk}" ${si.fs[kk] ? "checked" : ""}> ${lab}</label>`).join("")}
+      <p class="note">${fsHits.length ? `${fsHits.length} traditional Feng Shui concern${fsHits.length > 1 ? "s" : ""}. These are usually softened with layout, plants, screens or mirrors rather than being deal-breakers.` : "No Feng Shui concerns ticked."} Personal Feng Shui directions also depend on your birth year (Kua number), which this page doesn't cover.</p>
+      <p class="note">Vaastu and Feng Shui are traditional systems, so they're kept separate from the price, risk and forecast numbers.</p>`;
+    const save = () => { try { localStorage.setItem("hc-sun", JSON.stringify(sunInputs)); } catch (e) { /* ignore */ } renderSun(); };
+    document.querySelectorAll("[data-sun]").forEach(el => el.onchange = () => { sunInputs[el.dataset.sun] = el.value; save(); });
+    document.querySelectorAll("[data-fs]").forEach(el => el.onchange = () => { sunInputs.fs[el.dataset.fs] = el.checked; save(); });
+  }
+
+  // ---------------------------------------------------------------- houses checked through RentCast property records
+  function renderInspected() {
+    const houses = Object.values(INSPECTED || {}).filter(h => (h.zipCode || "") === zip || (h.formattedAddress || "").includes(zip));
+    const how = `To check a specific house, add its full address (e.g. "123 Main St, Columbus, OH 43201") on its own line in <code>inspect.txt</code> on GitHub. Each new address uses one RentCast lookup.`;
+    if (!houses.length) { $("#s-inspect").innerHTML = `<h2>Houses you're checking</h2><p class="note">${how}</p>`; return; }
+    const feat = h => Object.entries(h.features || {}).filter(([, v]) => v !== null && v !== "" && typeof v !== "object").map(([kk, v]) => `${kk.replace(/([A-Z])/g, " $1").toLowerCase()}: ${v === true ? "yes" : v}`).join(" &middot; ");
+    const lastYear = obj => { const ks = Object.keys(obj || {}).sort(); return ks.length ? obj[ks[ks.length - 1]] : null; };
+    $("#s-inspect").innerHTML = `<h2>Houses you're checking</h2><div class="listings">${houses.map(h => {
+      const tax = lastYear(h.propertyTaxes), asmt = lastYear(h.taxAssessments);
+      return `<div class="listing"><div class="price">${esc(h.formattedAddress || "")}</div>
+        <div class="note">${esc(h.propertyType || "")}${h.yearBuilt ? ` &middot; built ${h.yearBuilt}` : ""}${h.squareFootage ? ` &middot; ${h.squareFootage.toLocaleString()} sq ft` : ""}${h.lotSize ? ` &middot; lot ${h.lotSize.toLocaleString()} sq ft` : ""}</div>
+        ${feat(h) ? `<div class="note">${feat(h)}</div>` : ""}
+        ${h.lastSalePrice ? `<div>Last sold ${money(h.lastSalePrice)}${h.lastSaleDate ? ` (${h.lastSaleDate.slice(0, 10)})` : ""}</div>` : ""}
+        ${asmt ? `<div>Tax assessment ${asmt.year || ""}: ${money(asmt.value)}${asmt.land ? ` (land ${money(asmt.land)})` : ""}</div>` : ""}
+        ${tax ? `<div>Property tax ${tax.year || ""}: ${money(tax.total)}</div>` : ""}
+        ${h.yearBuilt ? `<ul class="note">${ageFlags(h.yearBuilt).map(f => `<li>${f}</li>`).join("")}</ul>` : ""}
+      </div>`; }).join("")}</div><p class="note">${how}</p>`;
   }
 
   function renderSchools() {

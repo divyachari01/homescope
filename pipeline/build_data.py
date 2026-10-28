@@ -263,8 +263,10 @@ def census_get(year, variables, extra=None):
     if key:
         params["key"] = key
     r = SESSION.get(f"https://api.census.gov/data/{year}/acs/acs5", params=params, timeout=600)
-    r.raise_for_status()
-    rows = r.json()
+    try:
+        rows = r.json()
+    except ValueError:
+        raise RuntimeError(f"HTTP {r.status_code}, reply: {r.text[:200]!r}") from None
     return pd.DataFrame(rows[1:], columns=rows[0])
 
 

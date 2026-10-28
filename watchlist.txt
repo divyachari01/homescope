@@ -1,3 +1,3 @@
-# Zip codes to pull live listings for (one per line, up to 6 on the free RentCast plan).
+# Zip codes to pull live listings for (one per line, up to 5 on the free RentCast plan).
 # Everything else on the site works for any US zip without being listed here.
 43201

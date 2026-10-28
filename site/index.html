@@ -49,7 +49,7 @@
         <label>Upkeep %/yr of value<input data-k="maintRate" type="number" step="0.1"></label>
         <label>Closing costs % of price<input data-k="closingPct" type="number" step="0.5"></label>
         <label>Selling costs %<input data-k="sellPct" type="number" step="0.5"></label>
-        <label>HOA / mo<input data-k="hoa" type="number" step="25"></label>
+        <label>HOA / mo <small class="muted">(blank = typical condo fee here)</small><input data-k="hoa" type="number" step="25" placeholder="auto"></label>
         <label>Income growth %/yr<input data-k="incomeGrowth" type="number" step="0.5"></label>
         <label>Return on savings %/yr<input data-k="invReturn" type="number" step="0.5"></label>
         <label>Rate change over next 5 yrs (pts)<input data-k="rateShift" type="number" step="0.25"></label>
@@ -72,13 +72,17 @@
   <main id="results" hidden>
     <section id="s-head"></section>
     <section id="s-summary" class="cards"></section>
+    <section id="s-market"></section>
     <section id="s-prices"></section>
     <section id="s-buying"></section>
     <section id="s-timing"></section>
     <section id="s-purpose"></section>
     <section id="s-hood"></section>
+    <section id="s-hazards"></section>
     <section id="s-law"></section>
+    <section id="s-sun"></section>
     <section id="s-listings"></section>
+    <section id="s-inspect"></section>
     <section id="s-schools"></section>
   </main>
 
