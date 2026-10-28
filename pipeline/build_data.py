@@ -32,6 +32,7 @@ import requests
 
 import extras
 import forecast
+import seo
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "raw"
@@ -956,9 +957,18 @@ def main():
 
     if OUT.exists():
         shutil.rmtree(OUT)
+    if (ROOT / "site" / "zip").exists():
+        shutil.rmtree(ROOT / "site" / "zip")
     (OUT / "zips").mkdir(parents=True)
     for prefix, recs in shards.items():
         (OUT / "zips" / f"{prefix}.json").write_text(json.dumps(recs, separators=(",", ":")))
+
+    # ---------- plain pages for search engines (one per zip and state) and the sitemap
+    try:
+        n_urls, _ = seo.build(ROOT / "site", shards, now.isoformat())
+        log(f"  search pages: {n_urls} addresses in the sitemap")
+    except Exception as e:  # noqa: BLE001
+        log(f"  WARNING: search pages skipped: {e!r}")
 
     # ---------- states (votes + landlord/tenant law table)
     laws = laws_table()

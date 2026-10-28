@@ -2,3 +2,5 @@ raw/
 site/data/
 __pycache__/
 *.part
+site/zip/
+site/sitemap.xml
