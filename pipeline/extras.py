@@ -301,6 +301,11 @@ def district_grades(seda_csv):
     g["pct"] = (g["score"].rank(pct=True) * 100).round(0)
     g["grade"] = pd.cut(g["pct"], [-1, 20, 40, 60, 80, 101], labels=["F", "D", "C", "B", "A"]).astype(str)
     g.index = g.index.astype(str).str.zfill(7)
+    # Also rank within the state (district id starts with the state code) and give both
+    # ranks as a 1-10 score, the scale most school-rating sites use.
+    g["spct"] = (g.groupby(g.index.str[:2])["score"].rank(pct=True) * 100).round(0)
+    g["n10"] = np.clip(np.ceil(g["pct"] / 10), 1, 10).astype(int)
+    g["s10"] = np.clip(np.ceil(g["spct"] / 10), 1, 10).astype(int)
     g["year"] = last
     return g
 

@@ -43,7 +43,7 @@ def zip_page(z, r, built):
     title = f"{z} {place} home prices, forecast, schools and risks | HomeScope"
     bits = [f"typical home {money(now)}" if now else None,
             f"5-year forecast {fc[1]:+.0f}%" if fc else None,
-            f"school district grade {school['grade']}" if school else None,
+            f"school district {school.get('n10', '?')}/10 nationally" if school else None,
             f"{hz['label'].lower()} natural hazard risk" if hz.get("label") else None]
     desc = f"Buying a home in {z} ({place})? " + ", ".join(b for b in bits if b) + \
         ". Prices since 1975, rates, affordability, listings, schools, crime, flood risk and more."
@@ -52,7 +52,7 @@ def zip_page(z, r, built):
             ("Typical rent", f"{money(rent)}/mo" if rent else "n/a"),
             ("Median household income", money(inc)),
             ("Market", mk.get("label") or "n/a"),
-            ("School district", f"{school['name']} (grade {school['grade']})" if school else "n/a"),
+            ("School district", f"{school['name']} ({school.get('n10', '?')}/10 nationally, {school.get('s10', '?')}/10 in state)" if school else "n/a"),
             ("Natural hazard risk (FEMA)", hz.get("label") or "n/a")]
     table = "".join(f"<tr><td>{html.escape(a)}</td><td>{html.escape(str(b))}</td></tr>" for a, b in rows)
     body = (f"<h1>{z} &middot; {html.escape(place)}</h1><p>Home buying report, data as of {built}.</p>"

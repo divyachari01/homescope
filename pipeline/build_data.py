@@ -932,7 +932,8 @@ def main():
                               "ratio": round(enroll / fte, 1) if enroll and fte else None,
                               "math": num_(g("math_test_pct_prof_midpt")), "read": num_(g("read_test_pct_prof_midpt")),
                               "charter": bool(g("charter") == 1), "district": g("lea_name"),
-                              "dgrade": str(dg["grade"]) if dg is not None else None})
+                              "dgrade": str(dg["grade"]) if dg is not None else None,
+                              "d10": int(dg["n10"]) if dg is not None else None, "ds10": int(dg["s10"]) if dg is not None else None})
             main = None
             if dgrades is not None:
                 leas = [schools.iloc[i]["leaid"] for _, i in near[z][:4] if schools.iloc[i]["leaid"] in dgrades.index]
@@ -940,7 +941,8 @@ def main():
                     lea = min(set(leas), key=lambda x: (-leas.count(x), leas.index(x)))   # most common, then nearest
                     dg = dgrades.loc[lea]
                     main = {"name": schools[schools["leaid"] == lea]["lea_name"].iloc[0], "grade": str(dg["grade"]),
-                            "pct": float(dg["pct"]), "year": int(dg["year"]) if pd.notna(dg["year"]) else None}
+                            "pct": float(dg["pct"]), "spct": float(dg["spct"]), "n10": int(dg["n10"]), "s10": int(dg["s10"]),
+                            "year": int(dg["year"]) if pd.notna(dg["year"]) else None}
             rec["schools"] = {"district": main, "list": rows_}
         if z in gent:
             rec["gent"] = gent[z]

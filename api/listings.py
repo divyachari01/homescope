@@ -30,8 +30,8 @@ def build(zipcode):
                "sale": sale.result(), "rent": rent.result()}
         try:
             out["sold"] = sold.result()      # recent sales for the deal check; optional
-        except Exception:  # noqa: BLE001
-            out["sold"] = []
+        except Exception as e:  # noqa: BLE001
+            out["sold"], out["soldError"] = [], repr(e)[:300]
         return out
 
 
