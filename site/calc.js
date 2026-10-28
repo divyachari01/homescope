@@ -29,7 +29,7 @@ const Calc = (() => {
     const per = monthly(1, { ...o, hoa: 0 });          // cost per $1 of price (it is linear in price)
     const perDollar = per.pi + per.tax + per.ins + per.pmi;
     const byPayment = Math.max(0, (budget - (o.hoa || 0)) / perDollar);
-    const byCash = o.cash / ((o.downPct + o.closingPct) / 100);
+    const byCash = Number.isFinite(o.cash) ? o.cash / ((o.downPct + o.closingPct) / 100) : Infinity;   // blank savings = no cap
     return { price: Math.min(byPayment, byCash), byPayment, byCash, budget,
              limitedBy: byPayment <= byCash ? "income" : "cash" };
   }

@@ -201,3 +201,6 @@ body:has(#v-homes:not([hidden])) .wrap { max-width: 1320px; }
 
 .take { background: var(--bg); border-radius: 12px; padding: 4px 16px 6px; margin: 12px 0; border-left: 4px solid var(--amber); }
 .take p { margin: 8px 0; max-width: 72ch; }
+
+.dealbar { position: sticky; top: 0; z-index: 3; background: var(--card); margin: -16px -16px 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.dealbar button.link { font-size: 1rem; }

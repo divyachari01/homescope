@@ -49,7 +49,6 @@
     <div class="grid-inputs">
       <label>Household income / yr<input data-k="income" type="number" step="1000"></label>
       <label>Other debt payments / mo<input data-k="debts" type="number" step="50"></label>
-      <label>Cash saved for buying<input data-k="cash" type="number" step="1000"></label>
       <label>You save each month<input data-k="save" type="number" step="100"></label>
       <label>Your rent now / mo<input data-k="rent0" type="number" step="50"></label>
       <label>Down payment %<input data-k="downPct" type="number" step="1"></label>
@@ -64,6 +63,7 @@
     <details class="sub">
       <summary>More assumptions</summary>
       <div class="grid-inputs">
+        <label>Cash saved for buying <small class="muted">(optional; blank = don't limit by savings)</small><input data-k="cash" type="number" step="1000" placeholder="optional"></label>
         <label>Max % of income on housing<input data-k="housingShare" type="number"></label>
         <label>Max % of income on all debt<input data-k="dtiCap" type="number"></label>
         <label>Property tax %/yr <small class="muted">(blank = zip's own)</small><input data-k="taxRate" type="number" step="0.05" placeholder="auto"></label>

@@ -4,7 +4,7 @@
 (() => {
   const $ = s => document.querySelector(s);
   const DEFAULTS = {
-    income: 100000, debts: 300, cash: 60000, save: 1500, rent0: 1500, downPct: 20, years: 30, rate: "",
+    income: 100000, debts: 300, cash: "", save: 1500, rent0: 1500, downPct: 20, years: 30, rate: "",
     housingShare: 28, dtiCap: 36, taxRate: "", insRate: "", pmiRate: 0.5, maintRate: 1, closingPct: "",
     sellPct: 6, hoa: "", incomeGrowth: 3, invReturn: 5, rateShift: 0, H: 10, invPremium: 0.75, invDown: 25,
     vacancy: 5, mgmt: 8, hackRent: "", strNightly: 150, strOcc: 55, strFees: 25,
@@ -40,6 +40,8 @@
     // Older versions saved fixed defaults for these; blank them so each zip's own values are used.
     if (saved.insRate === "0.5") delete saved.insRate;
     if (saved.closingPct === "3") delete saved.closingPct;
+    // Cash saved used to cap the budget; it's optional now (blank = budget from income and down payment %).
+    try { if (!localStorage.getItem("hc-cash-optional")) { delete saved.cash; localStorage.setItem("hc-cash-optional", "1"); } } catch (e) { /* ignore */ }
     document.querySelectorAll("[data-k]").forEach(el => {
       const key = el.dataset.k;
       el.value = saved[key] ?? DEFAULTS[key];
@@ -73,6 +75,8 @@
     o.closingPct = o.closingPct ?? (o.closingFees + 1 + o.insRate + o.taxRate / 4);
     o.hoaAuto = o.hoa === null;
     o.hoa = o.hoa ?? autoHoa();
+    o.cashKnown = o.cash != null;
+    if (!o.cashKnown) o.cash = Infinity;                // not limited by savings unless you enter them
     o.cash0 = o.cash;
     o.rentGrowth = rentGrowth();
     return o;
@@ -138,6 +142,7 @@
     return r.json();
   }
   async function init() {
+    if (history.state?.deal) history.replaceState(null, "");    // a reload while a sheet was open
     loadInputs();
     try {
       [NAT, STATES] = await Promise.all([getJSON("data/national.json"), getJSON("data/states.json")]);
@@ -307,7 +312,7 @@
     const mp = Calc.maxPrice(o);
     const tp = targetPrice(o);
     const where = rec.state || "this state";
-    out.push(card("You can afford up to", k(mp.price), `at ${o.ratePct}%: income allows ${k(mp.byPayment)}, cash allows ${k(mp.byCash)}
+    out.push(card("You can afford up to", k(mp.price), `at ${o.ratePct}% with ${o.downPct}% down${o.cashKnown ? `: income allows ${k(mp.byPayment)}, your savings allow ${k(mp.byCash)}` : `, from your income`}
       <details class="sub"><summary>What's included</summary>Cash covers ${o.downPct}% down + ${pct(o.closingPct)} closing${o.closingAuto ? ` (${where} title, recording and transfer fees ${pct(o.closingFees, 2)}, lender about 1%, first-year insurance and tax escrow)` : ""}.
       Monthly includes ${pct(o.taxRate, 2)} property tax${o.insAuto ? ` and ${where} average home insurance (${pct(o.insRate, 2)} of price)` : ""}${o.hoa ? ` and ${money(o.hoa)} HOA` : ""}.</details>`,
       tp ? (mp.price >= tp ? `<span class="pill">Covers the ${TYPES.find(t => t[0] === target.type)[1].toLowerCase()}</span>`
@@ -503,7 +508,7 @@
     if (!hist || !tp) { $("#s-timing").innerHTML = ""; return; }
     const b = bands(hist, o), fc = rec.fc && rec.fc["5"] ? rec.fc : null;
     if (!fc && !b.plan) { $("#s-timing").innerHTML = `<h2>Outlook</h2><p class="note">Not enough price history here to build a range.</p>`; return; }
-    const sim = { ...o, price0: tp, rate0: o.ratePct };
+    const sim = { ...o, price0: tp, rate0: o.ratePct, cash0: o.cashKnown ? o.cash : tp * (o.downPct + o.closingPct) / 100 };
     const ann = x => Math.pow(1 + x / 100, 1 / 5) - 1;     // 5-year % change -> yearly rate
     const scen = fc ? { low: ann(fc["5"][0]), mid: ann(fc["5"][1]), high: ann(fc["5"][2]) }
                     : { low: b.plan.low, mid: b.plan.mid, high: b.plan.high };
@@ -785,7 +790,7 @@
     const share = mo.total / (o.income / 12) * 100;
     out.push(d.overBudget
       ? `At around ${k(d.offer)} it's over your budget of ${k(d.maxPrice)}: you'd need more saved or a cheaper home.`
-      : `At around ${k(d.offer)} you'd pay about ${money(mo.total)} a month (${share.toFixed(0)}% of your income) and need about ${k(cash)} up front, leaving ${k(Math.max(0, o.cash - cash))} of your savings as a cushion.`);
+      : `At around ${k(d.offer)} you'd pay about ${money(mo.total)} a month (${share.toFixed(0)}% of your income) and need about ${k(cash)} up front${o.cashKnown ? (o.cash >= cash ? `, leaving ${k(o.cash - cash)} of your savings as a cushion` : `, ${k(cash - o.cash)} more than you have saved`) : ""}.`);
     if (mode === "rent" || mode === "str") {
       const rents = (listing?.rent || []).filter(r => r.price && r.bedrooms === s.bedrooms).map(r => r.price);
       const rent = rents.length >= 3 ? median(rents) : typicalRent();
@@ -854,6 +859,7 @@
   }
   async function openDeal(s) {
     deal = { id: s.id || s.formattedAddress, zip, base: s };
+    if (!history.state?.deal) history.pushState({ deal: true }, "");   // the phone's back button closes the sheet
     renderDeal(inputs());
     $("#dealModal").scrollTop = 0;
     if (!fullCache.has(deal.id) && API && s.formattedAddress) {
@@ -865,6 +871,11 @@
     }
   }
 
+  function closeDeal() {
+    if (history.state?.deal) { history.back(); return; }          // the popstate handler does the closing
+    deal = null; renderDeal(inputs());
+  }
+  window.addEventListener("popstate", () => { if (deal) { deal = null; renderDeal(inputs()); } });
   function renderDeal(o) {
     const el = $("#s-deal");
     $("#dealModal").hidden = !(deal && deal.zip === zip);
@@ -874,7 +885,7 @@
     const full = fullCache.get(deal.id) || {};
     // the listing's own days-on-market and list date win (the record's date can be from an older listing)
     const s = { ...deal.base, ...full, daysOnMarket: deal.base.daysOnMarket ?? full.daysOnMarket, listDate: deal.base.listDate ?? full.listDate };
-    if (!s.price) { el.innerHTML = `<h2>${esc(s.formattedAddress || "")}</h2><p class="note">This house isn't listed for sale right now, so there's no asking price to check. ${s.lastSoldPrice ? `It last sold for ${money(s.lastSoldPrice)} on ${s.lastSoldDate}.` : ""}</p><button type="button" class="link" id="dealClose">Close</button>`; $("#dealClose").onclick = () => { deal = null; renderDeal(o); }; return; }
+    if (!s.price) { el.innerHTML = `<h2>${esc(s.formattedAddress || "")}</h2><p class="note">This house isn't listed for sale right now, so there's no asking price to check. ${s.lastSoldPrice ? `It last sold for ${money(s.lastSoldPrice)} on ${s.lastSoldDate}.` : ""}</p><button type="button" class="link" id="dealClose">&larr; Back to homes</button>`; $("#dealClose").onclick = closeDeal; return; }
     const oo = { ...o, hoa: s.hoa || o.hoa };
     const hist = priceHistory();
     const d = Deal.analyze(s, { sold: listing?.zip === zip ? listing.sold || [] : [], active: listing?.zip === zip ? listing.sale : null,
@@ -920,7 +931,7 @@
       <td>${l.fits ? '<span class="pill">Fits</span>' : `<span class="pill warn">${l.why}</span>`}</td></tr>`).join("");
     const th = (s.taxHistory || []).slice(0, 6);
 
-    el.innerHTML = `<div class="row" style="justify-content:space-between"><h2>Deal check: ${esc(s.formattedAddress || "")}</h2><button type="button" class="link" id="dealClose">Close</button></div>
+    el.innerHTML = `<div class="dealbar"><button type="button" class="link" id="dealClose">&larr; Back to homes</button></div><h2>${esc(s.formattedAddress || "")}</h2>
       <div class="asof">Asking ${money(d.L)}${s.daysOnMarket != null ? ` &middot; listed ${s.daysOnMarket} days` : ""}${s.squareFootage ? ` &middot; ${s.squareFootage.toLocaleString()} sq ft` : ""}${s.yearBuilt ? ` &middot; built ${s.yearBuilt}` : ""}
         ${s.url ? ` &middot; <a href="${esc(s.url)}" target="_blank" rel="noopener">listing</a>` : ""}${loadingFull ? " &middot; loading the full property record..." : ""}</div>
       <p class="verdict"><b>${verdict}</b>${gapTxt ? ` Asking is ${gapTxt} the value estimate (${k(d.F)}).` : ""}</p>
@@ -988,7 +999,7 @@
         <p class="note">Ticks are saved in this browser.</p>
       </details>
       <p class="note">Estimates from public data, not an appraisal.</p>`;
-    $("#dealClose").onclick = () => { deal = null; renderDeal(o); };
+    $("#dealClose").onclick = closeDeal;
     el.querySelectorAll("[data-step]").forEach(c => c.onchange = () => { (steps[deal.id] = steps[deal.id] || {})[c.dataset.step] = c.checked; saveSteps(); });
   }
 
@@ -1683,8 +1694,8 @@
   const liveUpdate = () => { clearTimeout(typingTimer); typingTimer = setTimeout(() => { saveInputs(); refresh(); }, 350); };
   $("#purpose").addEventListener("change", () => { saveInputs(); refresh(); });
   $("#backHomes").addEventListener("click", () => { if (homesCtx) { $("#results").hidden = true; $("#v-homes").hidden = false; renderHomes(); window.scrollTo(0, 0); } else { $("#zip").value = zip; zipSearch(zip); } });
-  $("#dealModal").addEventListener("click", e => { if (e.target.id === "dealModal") { deal = null; renderDeal(inputs()); } });
-  document.addEventListener("keydown", e => { if (e.key === "Escape" && deal) { deal = null; renderDeal(inputs()); } });
+  $("#dealModal").addEventListener("click", e => { if (e.target.id === "dealModal") closeDeal(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && deal) closeDeal(); });
   document.querySelectorAll("[data-k]").forEach(el => { el.addEventListener("input", liveUpdate); el.addEventListener("change", liveUpdate); });
   $("#resetInputs").addEventListener("click", () => {
     try { localStorage.removeItem("hc-inputs"); } catch (e) { /* ignore */ }
