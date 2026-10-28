@@ -167,6 +167,7 @@
   // The full area report for one zip.
   async function openReport(z) {
     zip = z;
+    document.body.classList.add("searched");
     $("#status").textContent = "Loading...";
     try {
       const shard = await getShard(zip.slice(0, 3));
@@ -745,6 +746,7 @@
 
 
 
+  const facingRatingText = f => ["N", "E", "NE"].includes(f) ? "favoured in Vaastu" : f === "SW" ? "least favoured" : ["S", "SE"].includes(f) ? "not ideal" : "acceptable";
   // ---------------------------------------------------------------- deal check for one house
   let deal = null;                               // { id, zip, base: listing row, full: property record, state }
   const fullCache = new Map();
@@ -841,6 +843,9 @@
         <div><div class="k">Walk away above</div><div class="v">${k(d.walk)}</div><div class="note">${d.walk === d.maxPrice ? "your budget" : "value estimate + 3%"}</div></div>
       </div>
       ${d.overBudget ? `<p><span class="pill warn">Over your budget of ${k(d.maxPrice)}</span></p>` : ""}
+      ${(() => { const f = s.orient?.facing || shortlist[deal.id]?.facing, v = vaastuScore({ ...(shortlist[deal.id] || {}), facing: f, tjunction: s.orient ? !!s.orient.tjunction : undefined });
+        return f ? `<p class="vaastu-line"><b>Vaastu ${v ? v.pct + "%" : ""}</b> &middot; faces ${DIR_NAMES[f].toLowerCase()} (${facingRatingText(f)})${s.orient?.tjunction ? " &middot; a street points straight at it" : ""}${s.orient?.corner ? " &middot; corner lot" : ""}. ${shortlist[deal.id] ? "" : "Save it to add the rooms for a full score."}</p>`
+          : `<p class="vaastu-line muted">Facing not known yet, so no Vaastu score. Check the satellite view.</p>`; })()}
       <h3>What to do</h3><ul class="tight">${tips.map(t => `<li>${t}</li>`).join("")}</ul>
 
       <details class="sub"><summary>How this was worked out</summary>
@@ -1273,6 +1278,7 @@
   }
   function showHomes(url, remember) {
     F.shown = 24;
+    document.body.classList.add("searched");
     $("#status").textContent = "";
     $("#results").hidden = true;
     $("#v-homes").hidden = false;
@@ -1413,16 +1419,18 @@
     on("fSqft", t => { F.sqft = Number(t.value); }); on("fVaastu", t => { F.vaastu = t.checked; }); on("fNear", t => { F.nearby = t.checked; });
     $("#filters").querySelectorAll("#fFact [data-f]").forEach(b => b.onclick = () => { const f = b.dataset.f; lOn.has(f) ? lOn.delete(f) : lOn.add(f); saveSet("hc-lfact", lOn); renderHomes(); });
 
-    const VCLS = { good: "pill", fair: "pill", none: "pill muted", high: "pill warn", over: "pill warn" };
     $("#homeList").innerHTML = shown.slice(0, F.shown).map(h => {
       const s = h.s, id = esc(s.id || s.formattedAddress), j = h.j, saved = shortlist[s.id || s.formattedAddress];
       return `<article class="home" data-id="${id}">
-        ${s.photo ? `<div class="photo">${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">` : ""}<img src="${esc(s.photo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('.photo').remove()">${s.url ? "</a>" : ""}<span>Photo: Realtor.com</span></div>` : ""}
+        <div class="photo">${s.photo ? `${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">` : ""}<img src="${esc(s.photo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">${s.url ? "</a>" : ""}<span class="credit">Photo: Realtor.com</span>` : ""}
+          <span class="sign ${j.verdict[0]}">${j.verdict[1]}</span></div>
         <div class="body">
-          <div class="headrow"><span class="price">${money(s.price)}</span><span class="${VCLS[j.verdict[0]]}">${j.verdict[1]}</span></div>
+          <div class="headrow"><span class="price">${money(s.price)}</span></div>
           <div>${s.bedrooms ?? "?"} bd &middot; ${s.bathrooms ?? "?"} ba${s.squareFootage ? ` &middot; ${s.squareFootage.toLocaleString()} sq ft` : ""} &middot; ${esc(typeOf(s))}</div>
           <div class="note">${esc((s.formattedAddress || "").replace(/, [A-Z]{2},? \d{5}$/, ""))}</div>
           ${j.d && h.fits ? `<div class="offer">Offer around <b>${k(Math.min(j.d.opening, j.d.walk))}</b> &middot; ${money(h.pay)}/mo</div>` : `<div class="note">${money(h.pay)}/mo</div>`}
+          ${s.orient?.facing ? `<div class="vaastu">Faces ${DIR_NAMES[s.orient.facing].toLowerCase()} &middot; Vaastu <b>${j.parts.vaastu ?? "?"}%</b>${s.orient.tjunction ? " &middot; street points at it" : ""}</div>`
+            : liveCache.get(h.p.zip)?.mapState === "loading" ? `<div class="vaastu muted">Checking which way it faces...</div>` : ""}
           <ul class="why">${j.why.map(([g, t]) => `<li class="${g === true ? "pro" : g === false ? "con" : ""}">${esc(t)}</li>`).join("")}</ul>
           <div class="row"><button type="button" data-open="${id}" data-zip="${h.p.zip}">Details and offer</button>
             <button type="button" class="link" data-save="${id}" data-zip="${h.p.zip}">${saved ? "&#9829; Saved" : "&#9825; Save"}</button></div>
@@ -1530,6 +1538,7 @@
   $("#workAddr").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); const q = e.target.value.trim(); if (q) setWork(q); } });
   showWork();
   $("#lookup").addEventListener("submit", e => { e.preventDefault(); saveInputs(); lookup(); });
+  document.querySelectorAll(".examples .ex").forEach(b => b.onclick = () => { $("#zip").value = b.dataset.q; lookup(); });
   // Start loading as soon as the first 3 digits are typed; open the zip automatically at 5 digits.
   $("#zip").addEventListener("input", e => {
     const v = e.target.value.trim();

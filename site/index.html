@@ -4,6 +4,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1E2A4A">
 <title>HomeScope: free home buying report for any US zip code</title>
 <meta name="description" content="Free home buying report for any US zip code: homes for sale you can afford, prices since 1975, a 5-year price forecast, mortgage and down payment math, schools, crime, flood and fire risk, commute, Vaastu and Feng Shui.">
 <meta name="google-site-verification" content="dy-4r4BbKAxX7TIRNBGRqRKaTrGBl-hXHw_or6RcM7E">
@@ -14,14 +15,17 @@
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"HomeScope","url":"https://divyachari01.github.io/homescope/","applicationCategory":"FinanceApplication","operatingSystem":"Any","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"description":"Free home buying report for any US zip code: listings you can afford, price forecasts, mortgage math, schools, natural hazards, commute, Vaastu and Feng Shui.","author":{"@type":"Person","name":"Divya Chari"}}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Public+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="top">
-  <div class="wrap">
-    <h1>HomeScope</h1>
-    <p class="tag">Find a home you can afford, and know what to offer.</p>
+<header class="top" id="top">
+  <div class="wrap hero">
+    <a class="brand" href="./">HomeScope</a>
+    <h1 class="hero-h">Find a home you can afford, and know what to offer.</h1>
     <form id="lookup" class="lookup" autocomplete="off">
       <input id="zip" placeholder="City, zip, address or listing link" aria-label="City, zip code, address or listing link" required>
       <select id="purpose" aria-label="What is the home for?">
@@ -30,9 +34,11 @@
         <option value="hack">Live in part, rent out part</option>
         <option value="str">Short-term rental (Airbnb)</option>
       </select>
-      <button type="submit">Search</button>
+      <button type="submit">Search homes</button>
     </form>
+    <p class="examples">Try <button type="button" class="ex" data-q="Columbus, OH">Columbus, OH</button> <button type="button" class="ex" data-q="Frisco, TX">Frisco, TX</button> <button type="button" class="ex" data-q="Raleigh, NC">Raleigh, NC</button> or paste a listing link.</p>
   </div>
+  <svg class="street" viewBox="0 0 1440 130" preserveAspectRatio="xMidYMax slice" aria-hidden="true" focusable="false"><g class="houses"><path d="M0 130V76L16 42H80L96 76V130Z"/><path d="M100 130V58L155 36L210 58V130Z"/><path d="M224 130V50L279 28L334 50V130Z"/><path d="M348 130V46L364 18H442L458 46V130Z"/><path d="M472 130V58L488 36H540L556 58V130Z"/><path d="M560 130V68L576 34H614L630 68V130Z"/><rect x="652" y="58" width="96" height="72"/><path d="M770 130V76L786 48H824L840 76V130Z"/><path d="M854 130V68L870 46H948L964 68V130Z"/><path d="M986 130V42L1051 8L1116 42V130Z"/><path d="M1124 130V76L1140 54H1178L1194 76V130Z"/><path d="M1198 130V46L1246 24L1294 46V130Z"/><rect x="1316" y="58" width="110" height="72"/></g><g class="lit"><rect x="12" y="86" width="10" height="12" rx="1"/><rect x="34" y="86" width="10" height="12" rx="1"/><rect x="56" y="106" width="10" height="12" rx="1"/><rect x="112" y="68" width="10" height="12" rx="1"/><rect x="134" y="68" width="10" height="12" rx="1"/><rect x="134" y="88" width="10" height="12" rx="1"/><rect x="178" y="88" width="10" height="12" rx="1"/><rect x="258" y="60" width="10" height="12" rx="1"/><rect x="258" y="100" width="10" height="12" rx="1"/><rect x="280" y="60" width="10" height="12" rx="1"/><rect x="382" y="56" width="10" height="12" rx="1"/><rect x="426" y="76" width="10" height="12" rx="1"/><rect x="484" y="88" width="10" height="12" rx="1"/><rect x="572" y="98" width="10" height="12" rx="1"/><rect x="664" y="68" width="10" height="12" rx="1"/><rect x="664" y="108" width="10" height="12" rx="1"/><rect x="686" y="68" width="10" height="12" rx="1"/><rect x="686" y="88" width="10" height="12" rx="1"/><rect x="708" y="68" width="10" height="12" rx="1"/><rect x="708" y="88" width="10" height="12" rx="1"/><rect x="866" y="78" width="10" height="12" rx="1"/><rect x="866" y="98" width="10" height="12" rx="1"/><rect x="888" y="78" width="10" height="12" rx="1"/><rect x="888" y="98" width="10" height="12" rx="1"/><rect x="932" y="78" width="10" height="12" rx="1"/><rect x="932" y="98" width="10" height="12" rx="1"/><rect x="998" y="72" width="10" height="12" rx="1"/><rect x="1136" y="86" width="10" height="12" rx="1"/><rect x="1158" y="86" width="10" height="12" rx="1"/><rect x="1210" y="96" width="10" height="12" rx="1"/><rect x="1232" y="56" width="10" height="12" rx="1"/><rect x="1254" y="56" width="10" height="12" rx="1"/><rect x="1328" y="68" width="10" height="12" rx="1"/><rect x="1328" y="88" width="10" height="12" rx="1"/><rect x="1350" y="68" width="10" height="12" rx="1"/><rect x="1350" y="108" width="10" height="12" rx="1"/><rect x="1372" y="68" width="10" height="12" rx="1"/><rect x="1394" y="68" width="10" height="12" rx="1"/><rect x="1394" y="108" width="10" height="12" rx="1"/></g></svg>
 </header>
 
 <div id="dealModal" hidden><div class="sheet"><section id="s-deal"></section></div></div>
