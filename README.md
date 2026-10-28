@@ -12,7 +12,8 @@ A free website that sizes up any US zip code before you buy a home. You type a z
 - **Neighborhood:** income, education, poverty and unemployment now versus 10 years earlier, renters, housing mix, a gentrification check, and how the zip compares with the zips within 5 miles of it.
 - **Natural hazards and the building:** FEMA's National Risk Index (flood, wildfire, hurricane, tornado, earthquake, heat and more), the expected yearly damage on the selected home, and what to check for the age of homes in the area.
 - **Politics and law:** county and state presidential results since 2000, plus state rent control rules, just-cause eviction rules and eviction notice periods.
-- **Sun, Vaastu and Feng Shui:** the sun's path through the year for the zip, and traditional Vaastu and Feng Shui checks for a house once you enter which way it faces and where its rooms are.
+- **Vaastu and Feng Shui:** every listing gets a Vaastu score from what the street map shows (which way it faces, whether a street points at it), and you can filter and sort by it. Shortlisted homes get the full room-by-room Vaastu score and a Feng Shui checklist. A sun-path chart for the zip shows how light falls on each side of a house.
+- **Schools:** the school district's grade (A to F, from Stanford's nationally comparable test scores) and the nearest public schools with size, students per teacher and state test results.
 - **Homes you can buy:** homes for sale and for rent in your watchlist zips, filtered to what you can afford, each with its estimated facing direction and Vaastu / Feng Shui notes, plus the property record (year built, roof, exterior and foundation type, tax assessments, last sale) for specific addresses you add.
 
 Your own numbers (income, savings and so on) are only stored in your browser and never leave your device.
@@ -67,6 +68,8 @@ The site rebuilds daily, but each source publishes on its own schedule, and ever
 | 50-year zip price index | FHFA | yearly |
 | Income, renters, education, housing mix, property tax, utility bills | Census ACS 5-year | yearly |
 | Natural hazards | FEMA National Risk Index | every year or two |
+| School district scores | Stanford Education Data Archive (SEDA 2025.1) | yearly |
+| School directory and test results | Urban Institute Education Data Portal (NCES / EDFacts) | yearly (test results 2018-19) |
 | Violent crime (county) | County Health Rankings | yearly |
 | Presidential results | MIT Election Data and Science Lab | every 4 years |
 | Rent control, just cause, notice periods | NAA, NLIHC, Nolo (in `pipeline/states.csv`) | checked by hand, Oct 2026 |
@@ -96,4 +99,8 @@ Then open http://localhost:8000. Downloads are kept in `raw/` so later runs are 
 
 ## Not built yet
 
-School ratings (Stanford Education Data Archive or state report cards), county job and layoff data (BLS and state WARN notices), land values (FHFA land price estimates) and building-code adoption by county (FEMA BCAT) are the natural next additions.
+County job and layoff data (BLS and state WARN notices), land values (FHFA land price estimates), building-code adoption by county (FEMA BCAT), commute times and nearby amenities (OpenStreetMap), and broadband availability (FCC) are the natural next additions.
+
+## License
+
+Copyright (c) 2026 Divya Chari. The code is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE.md): you can use, copy and change it for personal, research, educational and other noncommercial purposes, and commercial use needs written permission. Third-party software and data keep their own terms; see [NOTICE.md](NOTICE.md), which also has the attributions and the disclaimer.
