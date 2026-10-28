@@ -25,7 +25,8 @@ Everything runs on GitHub for free. A GitHub Action runs once a day, downloads t
 pipeline/build_data.py      downloads and joins the public data, writes site/data/
 pipeline/forecast.py        the machine-learning forecast and its 2022-2026 test
 pipeline/extras.py          location, surrounding area, hazards, market, Fed rate, utilities
-pipeline/fetch_listings.py  RentCast listings for watchlist.txt and lookups for inspect.txt
+pipeline/fetch_listings.py  listings for watchlist.txt (Realtor.com) and house lookups for inspect.txt
+pipeline/orient.py          estimates which way each listed home faces from OpenStreetMap
 pipeline/states.csv         hand-kept state table: landlord-tenant law and car insurance
 site/                       the website (index.html, app.js, calc.js, style.css)
 logs/last-build.txt         output of the latest daily build, to see what worked
