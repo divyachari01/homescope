@@ -911,7 +911,7 @@
     if (d.walk < d.offer) tips.push(`Homes here sell for more than this one looks worth. Don't go past ${k(d.walk)}; it's fine to lose this one.`);
     if (d.gap < -8) tips.push(`Asking is below the value estimate. Expect competition and inspect carefully.`);
     if (d.flip) tips.push(`Sold for ${k(s.lastSoldPrice)} in ${s.lastSoldDate.slice(0, 4)}, now much higher: likely flipped. Ask for permits and receipts.`);
-    if (d.bad.length) tips.push(`Listing mentions: ${d.bad.join(", ")}. Get repair quotes before you commit.`);
+    if (d.bad.length) tips.push(`Listing mentions: ${d.bad.join(", ")}. Ask about it before you offer.`);
     if (d.taxNow && d.taxAfter > d.taxNow * 1.15) tips.push(`Property tax will likely rise from ${money(d.taxNow)} to about ${money(d.taxAfter)} a year after you buy.`);
     if (s.hoa) tips.push(`HOA ${money(s.hoa)}/mo: ask for its budget, reserves and any planned special fees.`);
     if (flood) tips.push(`High flood risk in this zip: check FEMA's flood map and get a flood insurance quote.`);
@@ -1285,7 +1285,7 @@
     $("#sources").innerHTML = `Data rebuilt ${NAT.built}. Sources: Freddie Mac mortgage rates (${a.rates || ""}), Federal Reserve Bank of New York, Zillow Research (${a.zillow_values || ""}),
       FHFA house price index (through ${a.fhfa || ""}), US Census Bureau ACS (${a.acs || ""}; this product uses the Census Bureau Data API but is not endorsed or certified by the Census Bureau), BLS, FEMA National Risk Index,
       ${a.market_source || "Realtor.com"} Economic Research, County Health Rankings &amp; Roadmaps, MIT Election Data and Science Lab, Stanford Education Data Archive, Urban Institute Education Data Portal, NAIC,
-      street, place and routing data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL) via Overpass, Nominatim and OSRM, county jobs from Census County Business Patterns, listings from Realtor.com.
+      street, place and routing data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL) via Overpass, Nominatim and OSRM, county jobs from Census County Business Patterns, listings, recent sales and value estimates (Quantarium, Collateral Analytics, Cotality) from Realtor.com.
       <br>&copy; 2026 Divya Chari. Code licensed under <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/" target="_blank" rel="noopener">PolyForm Noncommercial 1.0.0</a>; see the project's NOTICE for third-party terms.
       Provided as is, for information only: not financial, legal or real estate advice.`;
   }

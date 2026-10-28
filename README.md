@@ -15,8 +15,9 @@ A free website that sizes up any US zip code before you buy a home. You type a z
 - **Vaastu and Feng Shui:** every listing gets a Vaastu score from what the street map shows (which way it faces, whether a street points at it), and you can filter and sort by it. Shortlisted homes get the full room-by-room Vaastu score and a Feng Shui checklist. A sun-path chart for the zip shows how light falls on each side of a house.
 - **Commute, walkability and noise:** drive time from each home to your work or school address, the everyday places within a 10-minute walk of each listed home (groceries, parks, transit, pharmacies, cafes, schools), and nearby highways, railways and airports.
 - **Jobs and internet:** county jobs growth over 5 years and average pay (Census County Business Patterns), and the share of homes with broadband.
-- **Schools:** the school district's grade (A to F, from Stanford's nationally comparable test scores) and the nearest public schools with size, students per teacher and state test results.
-- **Homes you can buy:** homes for sale and for rent in your watchlist zips, filtered to what you can afford, each with its estimated facing direction and Vaastu / Feng Shui notes, plus the property record (year built, roof, exterior and foundation type, tax assessments, last sale) for specific addresses you add.
+- **Schools:** the school district's score out of 10, nationally and within its state (from Stanford's comparable test scores), and the nearest public schools with size, students per teacher and state test results.
+- **Homes you can buy:** live homes for sale and for rent in any zip, filtered to what you can afford, each with its estimated facing direction and Vaastu / Feng Shui notes.
+- **Deal check:** for any listing, or any address or Realtor.com / Zillow / Redfin link you paste, a fair-value check (recent nearby sales, the home's own last sale grown with local prices, and three automated estimates), a suggested opening offer, expected price and walk-away price, what to do as a buyer, sale and tax history, land share, condition notes from the listing, hazards, loan options (conventional, FHA, VA, 15-year) and a step-by-step plan to closing. The offer rule is replayed on every recent sale in the zip, and the page shows how close it came.
 
 Your own numbers (income, savings and so on) are only stored in your browser and never leave your device.
 
@@ -51,7 +52,7 @@ After that it rebuilds itself every day. You can also link straight to a zip wit
 
 ## Listings and house lookups
 
-Homes for sale and for rent in the zips on `watchlist.txt` (up to 30) are pulled every day from Realtor.com through [HomeHarvest](https://github.com/ZacharyHampton/HomeHarvest), a free open-source library that needs no key. It reads Realtor.com's site, which their terms of use don't allow, so it can stop working if they block it; this project is for personal use. If it fails, RentCast is used as a backup (weekly, up to 5 zips) when `RENTCAST_API_KEY` is set. Saved listings and lookups are committed back to the repo so they survive the daily rebuild.
+Any zip's listings, its sales from the last 6 months, and single-home records (for the deal check) come live from a small serverless function (`api/listings.py`, on Vercel, cached for 6 hours). As a fallback, homes for sale and for rent in the zips on `watchlist.txt` (up to 30) are also pulled every day from Realtor.com through [HomeHarvest](https://github.com/ZacharyHampton/HomeHarvest), a free open-source library that needs no key. It reads Realtor.com's site, which their terms of use don't allow, so it can stop working if they block it; this project is for personal use. If it fails, RentCast is used as a backup (weekly, up to 5 zips) when `RENTCAST_API_KEY` is set. Saved listings and lookups are committed back to the repo so they survive the daily rebuild.
 
 Each listed home's facing direction is estimated from OpenStreetMap streets (the direction from the house to its nearest street), which drives the per-house Vaastu and Feng Shui notes.
 
