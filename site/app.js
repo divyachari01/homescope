@@ -59,7 +59,9 @@
     });
     for (const [key, def] of Object.entries(DEFAULTS)) if (o[key] === null || Number.isNaN(o[key])) o[key] = def === "" ? null : def;
     o.ratePct = o.rate ?? currentRate(o.years);
-    o.taxRate = o.taxRate ?? (rec?.acs?.tax_rate || 1.1);
+    // California resets the tax to about 1.1% of the price when a home sells (Prop 13), so long-time
+    // owners' low bills (what the Census rate reflects) don't apply to a buyer.
+    o.taxRate = o.taxRate ?? Math.max(rec?.acs?.tax_rate || 1.1, rec?.state === "CA" ? 1.1 : 0);
     // Home insurance and closing costs follow the zip's state unless set by hand.
     const st = STATES[rec?.state] || {};
     o.insAuto = o.insRate === null;
@@ -452,7 +454,7 @@
             ${utilities() ? `<tr><td>Utilities: electric ${money(rec.util.electric || 0)} + gas ${money(rec.util.gas || 0)} (zip average)</td><td>${money(utilities())}</td></tr>` : ""}
             <tr><td><b>All-in per month</b></td><td><b>${money(m.total + tp * o.maintRate / 1200 + utilities())}</b></td></tr>
           </table>
-          <p class="note">Tax rate is what owners here actually pay (Census).${o.hoaAuto && o.hoa ? " HOA is the typical condo fee in current listings." : ""}${o.hoaAuto && !o.hoa && target.type === "condo" ? " Condo HOA unknown here; add it under More assumptions." : ""} Water and trash not included.</p>
+          <p class="note">Tax rate is what owners here actually pay (Census)${rec.state === "CA" ? ", raised to 1.1% because California reassesses at the sale price" : ""}.${o.hoaAuto && o.hoa ? " HOA is the typical condo fee in current listings." : ""}${o.hoaAuto && !o.hoa && target.type === "condo" ? " Condo HOA unknown here; add it under More assumptions." : ""} Water and trash not included.</p>
         </div>
       </div>`;
     const start = NAT.rate30.start.split("-").map(Number);
@@ -1406,7 +1408,7 @@
       // what you can afford in each zip, using its own tax rate and its state's insurance and closing costs
       const base = inputs();
       list.forEach(p => {
-        const s = STATES[p.state] || {}, ins = s.home_ins ? s.home_ins / 4000 : 0.5, tax = p.tax || 1.1;
+        const s = STATES[p.state] || {}, ins = s.home_ins ? s.home_ins / 4000 : 0.5, tax = Math.max(p.tax || 1.1, p.state === "CA" ? 1.1 : 0);
         const o = { ...base, taxRate: tax, insRate: ins, closingPct: (s.closing_fees ?? 1) + 1 + ins + tax / 4 };
         p.max = Calc.maxPrice(o).price; p.fits = !!(p.value && p.value <= p.max);
       });
@@ -1480,7 +1482,7 @@
     for (const p of zs) {
       const L = liveCache.get(p.zip);
       if (!L) continue;
-      const st = STATES[p.state] || {}, ins = st.home_ins ? st.home_ins / 4000 : 0.5, tax = p.tax || 1.1;
+      const st = STATES[p.state] || {}, ins = st.home_ins ? st.home_ins / 4000 : 0.5, tax = Math.max(p.tax || 1.1, p.state === "CA" ? 1.1 : 0);
       const oz = { ...o, taxRate: tax, insRate: ins, closingPct: (st.closing_fees ?? 1) + 1 + ins + tax / 4 };
       const zdom = median(L.sale.map(x => x.daysOnMarket).filter(Number.isFinite));
       for (const s of L.sale) {
