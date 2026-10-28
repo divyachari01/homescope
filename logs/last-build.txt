@@ -13,8 +13,64 @@ FHFA
   downloaded fhfa
 Census
   downloaded zip_county
-  ACS 2025 not available: HTTP 200, reply: '<html style="font-size: 14px;">\n\n<head>\n    <title>Missing Key</title>\n    <link rel="icon" type="
-  ACS 2024 not available: HTTP 200, reply: '<html style="font-size: 14px;">\n\n<head>\n    <title>Missing Key</title>\n    <link rel="icon" type="
-  ACS 2023 not available: HTTP 200, reply: '<html style="font-size: 14px;">\n\n<head>\n    <title>Missing Key</title>\n    <link rel="icon" type="
-  ACS 2022 not available: HTTP 200, reply: '<html style="font-size: 14px;">\n\n<head>\n    <title>Missing Key</title>\n    <link rel="icon" type="
-ERROR: no ACS 5-year data could be loaded
+  ACS 2025 not available: HTTP 404, reply: '<!doctype html><html lang="en"><head><title>HTTP Status 404 ? Not Found</title><style type="text/css">
+  downloaded ACS 2024
+  downloaded ACS 2014
+Crime and elections
+  downloaded chr
+  WARNING: could not read County Health Rankings file: 
+  WARNING: elections download failed: 400 Client Error: Bad Request for url: https://dataverse.harvard.edu/api/access/datafile/13573089?format=original
+Computing indicators
+Extra data
+  downloaded ACS 2024
+  downloaded gazetteer
+  WARNING: skipping nri: 403 Client Error: Forbidden for url: https://www.fema.gov:443/emergency-managers/practitioners/resilience-analysis-and-planning-tool
+  downloaded zip_tract
+  WARNING: natural hazards skipped: AttributeError("'NoneType' object has no attribute 'seek'")
+  WARNING: skipping redfin: 403 Client Error: Forbidden for url: https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_market_tracker/zip_code_market_tracker.tsv000.gz
+  WARNING: buyer/seller market skipped: ValueError("Invalid file path or buffer object type: <class 'NoneType'>")
+  downloaded fed
+Forecast model
+  downloaded ACS 2012
+  downloaded ACS 2013
+  downloaded ACS 2014
+  downloaded ACS 2015
+  downloaded ACS 2016
+  downloaded ACS 2017
+  downloaded ACS 2018
+  downloaded ACS 2019
+  downloaded ACS 2020
+  downloaded ACS 2021
+  downloaded ACS 2022
+  downloaded ACS 2023
+  downloaded ACS 2024
+  downloaded stocks
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:438: RuntimeWarning: divide by zero encountered in log
+  result = getattr(ufunc, method)(*inputs, **kwargs)
+  WARNING: forecast skipped: ValueError('window shape cannot be larger than input array shape')
+Writing zip files
+Done: 33784 zip codes in 894 files. Sources as of: {'rates': '2026-10-22', 'zillow_values': '2026-09', 'zillow_rents': '2026-09', 'zillow_forecast_base': '2026-09-30', 'fhfa': 2025, 'acs': '2020-2024', 'acs_old': '2010-2014', 'fed': '2026-10'}
