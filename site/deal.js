@@ -215,17 +215,23 @@ const Deal = (() => {
     const hot = (label === "Seller's market" || rule.m >= 1) && fresh && !rule.stale;
     const soft = label === "Buyer's market" || rule.stale || !fresh;
     if (!hot) rule.offer = Math.min(rule.offer, L * (rule.stale ? 0.97 : 1));   // never plan to pay over asking then
-    const opening = Math.min(rule.offer * (hot ? 1 : soft ? 0.97 : 0.985), hot ? Infinity : L * 0.99);
-    // value + 3%, but outside a seller's market never more than asking
-    const valueWalk = Math.min((Number.isFinite(F) ? F : rule.offer) * 1.03, hot ? Infinity : L);
+    // Two sides of the price: what the home is worth (F) and what sellers here actually get (E).
+    // Aim between them, so neither the listing price nor an automated estimate alone sets the offer.
+    const E = rule.offer;
+    let target = Number.isFinite(F) ? Math.sqrt(F * E) : E;
+    if (hot) target = Math.min(Math.max(target, E), (Number.isFinite(F) ? Math.max(F, E) : E) * 1.03);   // a fresh hot listing needs a competitive bid
+    else target = Math.min(target, L, soft ? E * 1.02 : Infinity);   // in a slow market, don't pay much over what homes really sell for
+    const opening = hot ? Math.min(target, Math.max(L, E)) : Math.min(target * (soft ? 0.96 : 0.98), L * 0.99);
+    // value + 3% (or the aim, if higher), but outside a seller's market never more than asking
+    const valueWalk = Math.min(Math.max(Number.isFinite(F) ? F : target, target) * 1.03, hot ? Infinity : L);
     // Your budget caps it, unless even the expected price is over budget (then that's flagged instead).
-    const walk = ctx.maxPrice && ctx.maxPrice < valueWalk && ctx.maxPrice >= Math.min(rule.offer, valueWalk) ? ctx.maxPrice : valueWalk;
+    const walk = ctx.maxPrice && ctx.maxPrice < valueWalk && ctx.maxPrice >= Math.min(target, valueWalk) ? ctx.maxPrice : valueWalk;
     const gap = Number.isFinite(F) ? (L / F - 1) * 100 : NaN;
 
     // Taxes, land, building
     const th = (s.taxHistory || []).filter(r => r && r[0]);
     const taxNow = s.tax || th[0]?.[1] || null;
-    const taxAfter = rule.offer * (o.taxRate / 100);
+    const taxAfter = target * (o.taxRate / 100);
     const withLand = th.find(r => r[2] && r[4]);
     const landShare = withLand ? withLand[2] / withLand[4] : null;
     const taxTrend = th.length >= 4 && th[0][1] && th[th.length - 1][1] ? (Math.pow(th[0][1] / th[th.length - 1][1], 1 / (th[0][0] - th[th.length - 1][0])) - 1) * 100 : null;
@@ -236,11 +242,11 @@ const Deal = (() => {
       && !/:\s*(?:no|none|0)$/i.test(t));
     return {
       L, F, gap, reads, comps: cs, comp, stl: rule.m, zipDom, stale: rule.stale, label, hot, soft,
-      offer: rule.offer, opening, walk, overBudget: ctx.maxPrice && ctx.maxPrice < rule.offer, maxPrice: ctx.maxPrice,
+      offer: target, expected: E, opening, walk, overBudget: ctx.maxPrice && ctx.maxPrice < target, maxPrice: ctx.maxPrice,
       flip, lastIdx, taxNow, taxAfter, taxTrend, landShare, landValue: landShare && Number.isFinite(F) ? landShare * F : null,
       good: scan(text, GOOD), bad: scan(text, BAD), build: scan(text, BUILD), facts: [...new Set(facts)].slice(0, 12),
       views7: s.views7, saves7: s.saves7,
-      loans: loans(rule.offer, o, s.hoa, ctx.rate15),
+      loans: loans(target, o, s.hoa, ctx.rate15),
       backtest: bt, nonDisclosure: NON_DISCLOSURE.has(rec.state) && sold.length < 8,
       soldCount: sold.length,
     };

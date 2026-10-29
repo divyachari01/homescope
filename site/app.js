@@ -903,7 +903,7 @@
     if (d.soft) tips.push(`Buyers have the upper hand${rec.market?.price_drops != null ? ` (${pct(rec.market.price_drops * 100, 0)} of listings cut their price)` : ""}. Open low and ask the seller to cover closing costs or buy down your rate.`);
     if (d.stale) tips.push(`Listed ${s.daysOnMarket} days (typical here: ${Math.round(d.zipDom)}). The seller may take less.`);
     if (d.gap > 8) tips.push(`Asking is ${d.gap.toFixed(0)}% above the value estimate, so the appraisal may come in low.`);
-    if (d.walk < d.offer) tips.push(`Homes here sell for more than this one looks worth. Don't go past ${k(d.walk)}; it's fine to lose this one.`);
+    if (d.walk < d.expected) tips.push(`Homes here sell for more (about ${k(d.expected)}) than this one looks worth. Don't go past ${k(d.walk)}; it's fine to lose this one.`);
     if (d.gap < -8) tips.push(d.soft ? `Asking is well below the value estimate. Inspect carefully: a low price can hide problems.` : `Asking is below the value estimate. Expect competition and inspect carefully.`);
     if (d.flip) tips.push(`Sold for ${k(s.lastSoldPrice)} in ${s.lastSoldDate.slice(0, 4)}, now much higher: likely flipped. Ask for permits and receipts.`);
     if (d.bad.length) tips.push(`Listing mentions: ${d.bad.join(", ")}. Ask about it before you offer.`);
@@ -939,7 +939,7 @@
       <p class="verdict"><b>${verdict}</b>${gapTxt ? ` Asking is ${gapTxt} the value estimate (${k(d.F)}).` : ""}</p>
       <div class="offer3">
         <div><div class="k">Open at</div><div class="v">${k(Math.min(d.opening, d.walk))}</div><div class="note">${pct(Math.min(d.opening, d.walk) / d.L * 100, 1)} of asking</div></div>
-        <div><div class="k">Expect to pay</div><div class="v">${k(d.offer)}</div><div class="note">typical sale price here</div></div>
+        <div><div class="k">Aim for</div><div class="v">${k(d.offer)}</div><div class="note">${Number.isFinite(d.F) ? `between its value (${k(d.F)}) and what similar homes sell for (${k(d.expected)})` : `what similar homes sell for`}</div></div>
         <div><div class="k">Walk away above</div><div class="v">${k(d.walk)}</div><div class="note">${d.walk === d.maxPrice ? "your budget" : d.walk === d.L ? "the asking price" : "value estimate + 3%"}</div></div>
       </div>
       ${d.overBudget ? `<p><span class="pill warn">Over your budget of ${k(d.maxPrice)}</span></p>` : ""}
@@ -952,7 +952,7 @@
       <details class="sub"><summary>How this was worked out</summary>
         <p class="note">${d.comp.n >= 8 ? `${d.comp.n} homes sold here in the last 6 months, typically at ${pct(d.comp.stl * 100, 1)} of asking after ${Math.round(d.comp.dom)} days.` :
           d.nonDisclosure ? `${esc(STATES[rec.state]?.name || rec.state)} doesn't publish sale prices, so this uses market data and value estimates only.` : "Too few recent sales here; assumes homes sell at 98% of asking."}
-        ${bt.n >= 8 ? `Tested on those sales: "expect to pay" landed within 5% of the real price ${pct(bt.within5, 0)} of the time. ${bt.w > 0 ? "Nearby sales improved the guess, so they're included." : `Asking price predicted sale price better than nearby sales did (off by ${pct(bt.listMiss, 1)} vs ${pct(bt.fairMiss, 1)}), so the offer follows asking.`}` : ""}</p>
+        ${bt.n >= 8 ? `Tested on those sales, the "what similar homes sell for" price (${k(d.expected)} here) landed within 5% of the real price ${pct(bt.within5, 0)} of the time. The aim sits between that and the home's value (${Number.isFinite(d.F) ? k(d.F) : "n/a"}), so you neither overpay because the asking price is high nor lowball a home that's worth more.` : ""}</p>
         ${lad ? `<div class="table-wrap"><table><tr><th>Offer</th><th>Price</th><th>Recent sales it would have matched or beaten</th></tr>${lad}</table></div>` : ""}
         <h3>Value estimates</h3>
         <div class="table-wrap"><table><tr><th>Source</th><th>Value</th><th>Range</th></tr>${readRows || `<tr><td colspan="3">None available</td></tr>`}</table></div>
