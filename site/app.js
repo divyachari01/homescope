@@ -15,7 +15,7 @@
   ];
   const LISTING_GROUPS = {
     "Single Family": "House", "Condo": "Condo / apartment", "Townhouse": "Townhouse",
-    "Multi-Family": "2-4 unit building", "Apartment": "Apartment building (5+)", "Manufactured": "Manufactured",
+    "Multi-Family": "Multi-unit", "Apartment": "Apartment building (5+)", "Manufactured": "Manufactured",
     "Land": "Land",
   };
 
@@ -653,7 +653,7 @@
           <tr><td>Your rent now</td><td>${money(o.rent0)}/mo</td></tr>
           <tr><td>Lenders usually count 75% of the rent toward qualifying</td><td>${money(partRent * 0.75)}/mo</td></tr>
         </table>
-        <p class="note">Living in one unit of a 2-4 unit building lets you use owner-occupant loans (lower rates, FHA from 3.5% down) instead of investor loans. In listings, look at "2-4 unit building". Renting a room or basement can need a permit, so check the city's rules.</p>`;
+        <p class="note">Living in one unit of a 2-4 unit building lets you use owner-occupant loans (lower rates, FHA from 3.5% down) instead of investor loans. In listings, pick the "Multi-unit" type. Renting a room or basement can need a permit, so check the city's rules.</p>`;
     }
     $("#s-purpose").innerHTML = html;
     hint("h-purpose", ({ live: "to live in", rent: "as a rental", hack: "live in part, rent out part", str: "short-term rental" })[mode]);
@@ -777,7 +777,7 @@
   // growth, condition, Vaastu, purpose). Plain rules, no paid AI: each sentence says what the data says.
   function ourTake(s, d, o) {
     const out = [], mode = $("#purpose").value, kind = { "Condo": "condo", "Apartment": "apartment", "Townhouse": "townhouse", "Single Family": "house", "Manufactured": "manufactured home" }[s.propertyType] || "home";
-    const size = s.propertyType === "Multi-Family" ? `2-4 unit building${s.bedrooms ? ` (${s.bedrooms} beds in total)` : ""}` : [s.bedrooms ? `${s.bedrooms}-bed` : "", kind].filter(Boolean).join(" ");
+    const size = s.propertyType === "Multi-Family" ? `multi-unit building${s.bedrooms ? ` (${s.bedrooms} beds in total)` : ""}` : [s.bedrooms ? `${s.bedrooms}-bed` : "", kind].filter(Boolean).join(" ");
     const m = rec.market || {}, fc = rec.fc?.["1"], fc5 = rec.fc?.["5"], sd = rec.schools?.district, g = rec.growth, hz = rec.hazard;
     // 1. the price
     const priceBit = !Number.isFinite(d.gap) ? `There isn't enough data to put a value on this ${size}.`
