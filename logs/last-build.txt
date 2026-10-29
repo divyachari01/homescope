@@ -63,4 +63,4 @@ Forecast model
 Writing zip files
   city search table: 32789 zips
   search pages: 33834 addresses in the sitemap
-Done: 33786 zip codes in 894 files. Sources as of: {'rates': '2026-10-22', 'zillow_values': '2026-09', 'zillow_rents': '2026-09', 'zillow_forecast_base': '2026-09-30', 'fhfa': 2025, 'acs': '2020-2024', 'acs_old': '2010-2014', 'crime': 'County Health Rankings 2025, homicides', 'elections': 2024, 'hazards': 'FEMA National Risk Index', 'market': '2026-09', 'market_source': 'Realtor.com', 'fed': '2026-10', 'jobs': 'BLS QCEW 2026 Q1', 'schools': 'SEDA 2025.1 (2025)', 'permits': 2025, 'population': 'ACS 5-year 2012-2024'}
+Done: 33786 zip codes in 894 files. Sources as of: {'rates': '2026-10-29', 'zillow_values': '2026-09', 'zillow_rents': '2026-09', 'zillow_forecast_base': '2026-09-30', 'fhfa': 2025, 'acs': '2020-2024', 'acs_old': '2010-2014', 'crime': 'County Health Rankings 2025, homicides', 'elections': 2024, 'hazards': 'FEMA National Risk Index', 'market': '2026-09', 'market_source': 'Realtor.com', 'fed': '2026-10', 'jobs': 'BLS QCEW 2026 Q1', 'schools': 'SEDA 2025.1 (2025)', 'permits': 2025, 'population': 'ACS 5-year 2012-2024'}
