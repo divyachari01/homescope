@@ -1485,7 +1485,7 @@
     }
     const budget = Math.round(Calc.maxPrice(o).price / 5000) * 5000, cap = F.max ?? budget;
     const typeOf = s => LISTING_GROUPS[s.propertyType] || s.propertyType || "Other";
-    const passes = h => (h.s.bedrooms ?? 0) >= F.beds && (h.s.bathrooms ?? 0) >= F.baths && (!F.sqft || (h.s.squareFootage ?? 0) >= F.sqft)
+    const passes = h => (F.beds === -1 ? h.s.bedrooms === 0 : (h.s.bedrooms ?? 0) >= F.beds) && (h.s.bathrooms ?? 0) >= F.baths && (!F.sqft || (h.s.squareFootage ?? 0) >= F.sqft)
       && (F.type === "All" || typeOf(h.s) === F.type) && (!F.vaastu || ["N", "E", "NE"].includes(h.s.orient?.facing));
     const inMap = h => !F.bounds || (h.s.latitude && F.bounds.contains([h.s.longitude, h.s.latitude]));
     let shown = homes.filter(h => h.s.price <= cap && passes(h) && inMap(h)), noneInBudget = false;
@@ -1496,7 +1496,8 @@
     const bonus = { good: 12, fair: 4, none: 0, high: -12, over: -40 };
     const sorters = { best: (a, b) => (b.j.score ?? 50) + bonus[b.j.verdict[0]] - ((a.j.score ?? 50) + bonus[a.j.verdict[0]]),
       low: (a, b) => a.s.price - b.s.price, high: (a, b) => b.s.price - a.s.price,
-      new: (a, b) => (a.s.daysOnMarket ?? 1e9) - (b.s.daysOnMarket ?? 1e9), big: (a, b) => (b.s.squareFootage || 0) - (a.s.squareFootage || 0) };
+      new: (a, b) => (a.s.daysOnMarket ?? 1e9) - (b.s.daysOnMarket ?? 1e9), big: (a, b) => (b.s.squareFootage || 0) - (a.s.squareFootage || 0),
+      small: (a, b) => (a.s.squareFootage || 1e9) - (b.s.squareFootage || 1e9) };
     shown.sort(noneInBudget && F.sort === "best" ? sorters.low : sorters[F.sort] || sorters.best);
 
     // one line about the area
@@ -1523,11 +1524,12 @@
     const types = ["All", ...new Set(homes.map(h => typeOf(h.s)))];
     const sel = (id, opts, v) => `<select id="${id}">${opts.map(([val, lab]) => `<option value="${val}" ${String(val) === String(v) ? "selected" : ""}>${lab}</option>`).join("")}</select>`;
     $("#filters").innerHTML = `<div class="row filters">
-        ${sel("fMax", [[cap, `Up to ${k(cap)}${F.max == null ? " (budget)" : ""}`], ...[300, 400, 500, 600, 750, 1000, 1500, 2500, 5000].map(v => [v * 1000, `Up to ${k(v * 1000)}`])], cap)}
-        ${sel("fBeds", [[0, "Any beds"], [1, "1+ beds"], [2, "2+ beds"], [3, "3+ beds"], [4, "4+ beds"], [5, "5+ beds"]], F.beds)}
-        ${sel("fBaths", [[0, "Any baths"], [1, "1+ baths"], [2, "2+ baths"], [3, "3+ baths"]], F.baths)}
+        ${sel("fMax", [...new Map([...[50, 100, 200, 300, 400, 500, 600, 750, 1000, 1500, 2500, 5000].map(v => [v * 1000, `Up to ${k(v * 1000)}`]),
+          [budget, `Up to ${k(budget)} (your budget)`]].sort((a, b) => a[0] - b[0]).map(x => [x[0], x])).values()].concat([[1e12, "$5M and up"]]), cap)}
+        ${sel("fBeds", [[0, "Any beds"], [-1, "Studio"], [1, "1+ beds"], [2, "2+ beds"], [3, "3+ beds"], [4, "4+ beds"], [5, "5+ beds"]], F.beds)}
+        ${sel("fBaths", [[0, "Any baths"], [1, "1+ baths"], [2, "2+ baths"], [3, "3+ baths"], [4, "4+ baths"]], F.baths)}
         ${sel("fType", types.map(t => [t, t === "All" ? "All types" : t]), F.type)}
-        ${sel("fSort", [["best", "Best match"], ["low", "Lowest price"], ["high", "Highest price"], ["new", "Newest"], ["big", "Largest"]], F.sort)}
+        ${sel("fSort", [["best", "Best match"], ["low", "Lowest price"], ["high", "Highest price"], ["new", "Newest"], ["big", "Largest"], ["small", "Smallest"]], F.sort)}
       </div>
       <details class="sub"><summary>More filters</summary>
         <div class="row filters" style="margin-top:6px">
