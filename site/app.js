@@ -4,7 +4,7 @@
 (() => {
   const $ = s => document.querySelector(s);
   const DEFAULTS = {
-    income: 100000, debts: 300, cash: "", save: 1500, rent0: 1500, downPct: 20, years: 30, rate: "",
+    income: 100000, debts: 300, cash: "", save: 1500, rent0: 1500, downPct: 20, downAmt: "", maxMonthly: "", years: 30, rate: "",
     housingShare: 28, dtiCap: 36, taxRate: "", insRate: "", pmiRate: 0.5, maintRate: 1, closingPct: "",
     sellPct: 6, hoa: "", incomeGrowth: 3, invReturn: 5, rateShift: 0, H: 10, invPremium: 0.75, invDown: 25,
     vacancy: 5, mgmt: 8, hackRent: "", strNightly: 150, strOcc: 55, strFees: 25,
@@ -312,8 +312,8 @@
     const mp = Calc.maxPrice(o);
     const tp = targetPrice(o);
     const where = rec.state || "this state";
-    out.push(card("You can afford up to", k(mp.price), `at ${o.ratePct}% with ${o.downPct}% down${o.cashKnown ? `: income allows ${k(mp.byPayment)}, your savings allow ${k(mp.byCash)}` : `, from your income`}
-      <details class="sub"><summary>What's included</summary>Cash covers ${o.downPct}% down + ${pct(o.closingPct)} closing${o.closingAuto ? ` (${where} title, recording and transfer fees ${pct(o.closingFees, 2)}, lender about 1%, first-year insurance and tax escrow)` : ""}.
+    out.push(card("You can afford up to", k(mp.price), `about ${money(Calc.monthly(mp.price, o).total)}/mo at ${o.ratePct}% with ${o.downAmt != null ? `${k(o.downAmt)} down` : `${o.downPct}% down`}${o.cashKnown ? `: income allows ${k(mp.byPayment)}, your savings allow ${k(mp.byCash)}` : `, from your income`}
+      <details class="sub"><summary>What's included</summary>Cash covers ${o.downAmt != null ? `${k(o.downAmt)} down` : `${o.downPct}% down`} + ${pct(o.closingPct)} closing${o.closingAuto ? ` (${where} title, recording and transfer fees ${pct(o.closingFees, 2)}, lender about 1%, first-year insurance and tax escrow)` : ""}.
       Monthly includes ${pct(o.taxRate, 2)} property tax${o.insAuto ? ` and ${where} average home insurance (${pct(o.insRate, 2)} of price)` : ""}${o.hoa ? ` and ${money(o.hoa)} HOA` : ""}.</details>`,
       tp ? (mp.price >= tp ? `<span class="pill">Covers the ${TYPES.find(t => t[0] === target.type)[1].toLowerCase()}</span>`
                           : `<span class="pill warn">${k(tp - mp.price)} short of the selected home</span>`) : ""));
@@ -411,13 +411,13 @@
   function downTable(tp, o) {
     const opts = [5, 10, 15, 20];
     const cols = opts.map(dp => {
-      const m = Calc.monthly(tp, { ...o, downPct: dp }), cash = tp * (dp + o.closingPct) / 100;
+      const m = Calc.monthly(tp, { ...o, downPct: dp, downAmt: null }), cash = tp * (dp + o.closingPct) / 100;
       const share = m.total / (o.income / 12) * 100, dti = (m.total + o.debts) / (o.income / 12) * 100;
       const ok = cash <= o.cash && share <= o.housingShare && dti <= o.dtiCap;
       const why = cash > o.cash ? "Cash short" : share > o.housingShare || dti > o.dtiCap ? "Payment too high" : "Yes";
       return { dp, m, cash, share, ok, why };
     });
-    const row = (label, f) => `<tr><td>${label}</td>${cols.map(c => `<td${c.dp === o.downPct ? ' style="font-weight:650"' : ""}>${f(c)}</td>`).join("")}</tr>`;
+    const row = (label, f) => `<tr><td>${label}</td>${cols.map(c => `<td${o.downAmt == null && c.dp === o.downPct ? ' style="font-weight:650"' : ""}>${f(c)}</td>`).join("")}</tr>`;
     return `<div class="table-wrap"><table>
       <tr><th></th>${cols.map(c => `<th>${c.dp}% down</th>`).join("")}</tr>
       ${row("Cash up front (incl. closing)", c => k(c.cash))}
@@ -465,7 +465,7 @@
             <input id="customPrice" type="number" step="5000" style="width:9em" value="${target.type === "custom" ? target.custom || "" : Math.round(tp)}" ${target.type === "custom" ? "" : "hidden"}></div>
           <table style="margin-top:8px">
             <tr><td>Price</td><td>${money(tp)}</td></tr>
-            <tr><td>Down payment (${o.downPct}%) + closing</td><td>${money(m.down + tp * o.closingPct / 100)}</td></tr>
+            <tr><td>Down payment (${pct(Calc.pctAt(tp, o), 0)}) + closing</td><td>${money(m.down + tp * o.closingPct / 100)}</td></tr>
             <tr><td>Loan principal + interest</td><td>${money(m.pi)}</td></tr>
             <tr><td>Property tax (${o.taxRate.toFixed(2)}%/yr)</td><td>${money(m.tax)}</td></tr>
             <tr><td>Insurance</td><td>${money(m.ins)}</td></tr>
@@ -508,7 +508,7 @@
     if (!hist || !tp) { $("#s-timing").innerHTML = ""; return; }
     const b = bands(hist, o), fc = rec.fc && rec.fc["5"] ? rec.fc : null;
     if (!fc && !b.plan) { $("#s-timing").innerHTML = `<h2>Outlook</h2><p class="note">Not enough price history here to build a range.</p>`; return; }
-    const sim = { ...o, price0: tp, rate0: o.ratePct, cash0: o.cashKnown ? o.cash : tp * (o.downPct + o.closingPct) / 100 };
+    const sim = { ...o, price0: tp, rate0: o.ratePct, cash0: o.cashKnown ? o.cash : Calc.downAt(tp, o) + tp * o.closingPct / 100 };
     const ann = x => Math.pow(1 + x / 100, 1 / 5) - 1;     // 5-year % change -> yearly rate
     const scen = fc ? { low: ann(fc["5"][0]), mid: ann(fc["5"][1]), high: ann(fc["5"][2]) }
                     : { low: b.plan.low, mid: b.plan.mid, high: b.plan.high };
@@ -599,7 +599,7 @@
 
   // ---------------------------------------------------------------- purpose-specific numbers
   function investorOpts(o) {
-    return { ...o, downPct: o.invDown, ratePct: o.ratePct + o.invPremium };
+    return { ...o, downPct: o.invDown, downAmt: null, ratePct: o.ratePct + o.invPremium };
   }
   function renderPurpose(o) {
     const mode = $("#purpose").value, tp = targetPrice(o), rent = typicalRent();
@@ -786,7 +786,7 @@
     const mkBit = m.label ? ` It's a ${m.label.toLowerCase().replace(/^balanced$/, "balanced market")}${m.dom ? ` where homes take about ${Math.round(m.dom)} days to sell` : ""}${d.stale ? `, and this one has sat for ${s.daysOnMarket} days` : ""}.` : "";
     out.push(priceBit + mkBit);
     // 2. what it means for you
-    const oo = { ...o, hoa: s.hoa || o.hoa || 0 }, mo = Calc.monthly(d.offer, oo), cash = d.offer * (o.downPct + o.closingPct) / 100;
+    const oo = { ...o, hoa: s.hoa || o.hoa || 0 }, mo = Calc.monthly(d.offer, oo), cash = Calc.downAt(d.offer, o) + d.offer * o.closingPct / 100;
     const share = mo.total / (o.income / 12) * 100;
     out.push(d.overBudget
       ? `At around ${k(d.offer)} it's over your budget of ${k(d.maxPrice)}: you'd need more saved or a cheaper home.`
@@ -1329,7 +1329,9 @@
 
   function updateBudget() {
     const el = $("#budgetTxt");
-    if (el && NAT) el.textContent = `up to ${k(Calc.maxPrice(inputs()).price)}`;
+    if (!el || !NAT) return;
+    const o = inputs(), mp = Calc.maxPrice(o), m = Calc.monthly(mp.price, o);
+    el.textContent = `up to ${k(mp.price)}, about ${money(m.total)}/mo with ${k(Calc.downAt(mp.price, o))} down`;
   }
   function placeFromRec(z, r) {
     return { zip: z, city: r.city, state: r.state, county: r.county, lat: r.lat, lon: r.lon, value: r.zhvi_now?.all || r.acs?.home_value,
@@ -1670,6 +1672,23 @@
     el.querySelectorAll("tr[data-zip]").forEach(tr => tr.onclick = () => { $("#zip").value = tr.dataset.zip; zipSearch(tr.dataset.zip); window.scrollTo(0, 0); });
   }
 
+  // ---------------------------------------------------------------- suggestions while typing a place
+  let NAMES = null;
+  async function suggest(v) {
+    let places;
+    try { places = await loadPlaces(); } catch (e) { return; }
+    if (!NAMES) {                                   // every "City, ST" and "County, ST", with how many zips each has
+      const n = new Map();
+      for (const p of places) for (const nm of [p.city, p.county]) if (nm && p.state) { const key = `${nm}, ${p.state}`; n.set(key, (n.get(key) || 0) + 1); }
+      NAMES = [...n.entries()].map(([name, c]) => ({ name, c, key: norm(name) })).sort((a, b) => b.c - a.c);
+    }
+    const q = norm(v.replace(/,.*$/, "")), st = (v.match(/,\s*([a-z]{1,2})$/i) || [])[1]?.toUpperCase();
+    if (q.length < 2) return;
+    const hits = NAMES.filter(x => x.key.startsWith(q) && (!st || x.name.endsWith(", " + st) || x.name.split(", ")[1].startsWith(st))).slice(0, 8);
+    $("#placeList").innerHTML = hits.map(x => `<option value="${esc(x.name)}"></option>`).join("");
+    if (NAMES.some(x => x.name === v.trim())) lookup();   // picked from the list
+  }
+
   // ---------------------------------------------------------------- events
   $("#workSet").addEventListener("click", () => { const q = $("#workAddr").value.trim(); if (q) setWork(q); });
   $("#workAddr").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); const q = e.target.value.trim(); if (q) setWork(q); } });
@@ -1682,7 +1701,7 @@
     const v = e.target.value.trim();
     if (/^\d{3,5}$/.test(v)) getShard(v.slice(0, 3)).catch(() => {});
     if (/^\d{5}$/.test(v) && !(homesCtx?.mode === "zip" && homesCtx.zips[0].zip === v)) lookup();
-    if (/^[a-z]/i.test(v)) loadPlaces();               // a city name: get the search table ready
+    if (/^[a-z]/i.test(v)) suggest(v);                  // a city or county name: show matching places
   });
   let typingTimer = null;
   function refresh() {

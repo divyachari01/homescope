@@ -148,7 +148,7 @@ const Deal = (() => {
   function loans(P, o, hoa, rate15) {
     const pmt = (loan, r, yrs) => { const i = r / 1200, n = yrs * 12; return i ? loan * i / (1 - Math.pow(1 + i, -n)) : loan / n; };
     const tax = P * o.taxRate / 1200, ins = P * o.insRate / 1200, closing = P * o.closingPct / 100;
-    const budget = Math.min(o.income / 12 * o.housingShare / 100, o.income / 12 * o.dtiCap / 100 - o.debts);
+    const budget = Math.min(o.income / 12 * o.housingShare / 100, o.income / 12 * o.dtiCap / 100 - o.debts, o.maxMonthly || Infinity);
     const mk = (name, down, loan, rate, yrs, mi, note) => {
       const pi = pmt(loan, rate, yrs), monthly = pi + tax + ins + mi + (hoa || 0), cash = P * down / 100 + closing;
       return { name, down, loan, rate, yrs, pi, mi, monthly, cash, fits: cash <= o.cash && monthly <= budget,

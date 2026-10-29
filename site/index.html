@@ -27,7 +27,8 @@
     <a class="brand" href="./">HomeScope</a>
     <h1 class="hero-h">Find a home you can afford, and know what to offer.</h1>
     <form id="lookup" class="lookup" autocomplete="off">
-      <input id="zip" placeholder="City, zip, address or listing link" aria-label="City, zip code, address or listing link" required>
+      <input id="zip" list="placeList" placeholder="City, zip, address or listing link" aria-label="City, zip code, address or listing link" required>
+      <datalist id="placeList"></datalist>
       <select id="purpose" aria-label="What is the home for?">
         <option value="live">To live in</option>
         <option value="rent">As a rental investment</option>
@@ -52,6 +53,8 @@
       <label>You save each month<input data-k="save" type="number" step="100"></label>
       <label>Your rent now / mo<input data-k="rent0" type="number" step="50"></label>
       <label>Down payment %<input data-k="downPct" type="number" step="1"></label>
+      <label>Or a set down payment $ <small class="muted">(optional; replaces the %)</small><input data-k="downAmt" type="number" step="1000" placeholder="e.g. 40000"></label>
+      <label>Most you want to pay a month <small class="muted">(optional)</small><input data-k="maxMonthly" type="number" step="50" placeholder="from your income"></label>
       <label>Loan length (years)<select data-k="years"><option>30</option><option>15</option></select></label>
       <label>Interest rate % <small id="rateHint" class="muted"></small><input data-k="rate" type="number" step="0.05" placeholder="current"></label>
     </div>

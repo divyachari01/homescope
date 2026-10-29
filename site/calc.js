@@ -11,12 +11,15 @@ const Calc = (() => {
 
   // Full monthly cost of owning a home at a given price.
   // o: downPct, ratePct, years, taxRate, insRate, pmiRate (all % per year), hoa ($/month)
+  // Down payment at a given price: a fixed dollar amount if you gave one, else a percentage.
+  const downAt = (price, o) => o.downAmt != null ? Math.min(price, o.downAmt) : price * o.downPct / 100;
+  const pctAt = (price, o) => price > 0 ? downAt(price, o) / price * 100 : 0;
   function monthly(price, o) {
-    const down = price * o.downPct / 100, loan = price - down;
+    const down = downAt(price, o), loan = price - down;
     const pi = pmt(loan, o.ratePct, o.years);
     const tax = price * o.taxRate / 100 / 12;
     const ins = price * o.insRate / 100 / 12;
-    const pmi = o.downPct < 20 ? loan * o.pmiRate / 100 / 12 : 0;
+    const pmi = pctAt(price, o) < 20 ? loan * o.pmiRate / 100 / 12 : 0;
     const hoa = o.hoa || 0;
     return { price, down, loan, pi, tax, ins, pmi, hoa, total: pi + tax + ins + pmi + hoa };
   }
@@ -25,11 +28,19 @@ const Calc = (() => {
   // o also needs: income ($/yr), debts ($/mo), cash, closingPct, housingShare (%), dtiCap (%)
   function maxPrice(o) {
     const inc = o.income / 12;
-    const budget = Math.min(inc * o.housingShare / 100, inc * o.dtiCap / 100 - o.debts);
-    const per = monthly(1, { ...o, hoa: 0 });          // cost per $1 of price (it is linear in price)
-    const perDollar = per.pi + per.tax + per.ins + per.pmi;
-    const byPayment = Math.max(0, (budget - (o.hoa || 0)) / perDollar);
-    const byCash = Number.isFinite(o.cash) ? o.cash / ((o.downPct + o.closingPct) / 100) : Infinity;   // blank savings = no cap
+    // what you can spend on housing each month: lender rules on income, or less if you set your own cap
+    const budget = Math.min(inc * o.housingShare / 100, inc * o.dtiCap / 100 - o.debts, o.maxMonthly || Infinity);
+    let byPayment, byCash;
+    if (o.downAmt == null) {
+      const per = monthly(1, { ...o, hoa: 0 });        // cost per $1 of price (it is linear in price)
+      byPayment = Math.max(0, (budget - (o.hoa || 0)) / (per.pi + per.tax + per.ins + per.pmi));
+      byCash = Number.isFinite(o.cash) ? o.cash / ((o.downPct + o.closingPct) / 100) : Infinity;   // blank savings = no cap
+    } else {                                            // fixed dollar down payment: not linear, so search
+      let lo = 0, hi = 2e7;
+      for (let i = 0; i < 60; i++) { const mid = (lo + hi) / 2; if (monthly(mid, o).total <= budget) lo = mid; else hi = mid; }
+      byPayment = lo;
+      byCash = Number.isFinite(o.cash) ? Math.max(0, (o.cash - o.downAmt) / (o.closingPct / 100)) : Infinity;
+    }
     return { price: Math.min(byPayment, byCash), byPayment, byCash, budget,
              limitedBy: byPayment <= byCash ? "income" : "cash" };
   }
@@ -77,7 +88,7 @@ const Calc = (() => {
       if (k !== null && m === k * 12) {
         const price = o.price0 * Math.pow(1 + g, k);
         rate = o.rate0 + o.rateShift * Math.min(k, 5) / 5;
-        const need = price * (o.downPct + o.closingPct) / 100;
+        const need = downAt(price, o) + price * o.closingPct / 100;
         const mc = monthly(price, { ...o, ratePct: rate });
         const income = o.income * Math.pow(1 + o.incomeGrowth / 100, k);
         Object.assign(row, { price, rate, need, have: inv, payment: mc.total,
@@ -92,7 +103,7 @@ const Calc = (() => {
         value *= Math.pow(1 + g, 1 / 12);
         const interest = bal * rate / 1200;
         bal = Math.max(0, bal - (pi - interest));
-        const pmi = o.downPct < 20 && bal / value > 0.78 ? loan * o.pmiRate / 1200 : 0;
+        const pmi = pctAt(o.price0, o) < 20 && bal / value > 0.78 ? loan * o.pmiRate / 1200 : 0;
         cost = pi + value * (o.taxRate + o.insRate + o.maintRate) / 1200 + (o.hoa || 0) + pmi;
       } else {
         cost = o.rent0 * Math.pow(1 + o.rentGrowth / 100, t);
@@ -110,12 +121,12 @@ const Calc = (() => {
     const gross = rentMonthly * 12;
     const expenses = gross * (o.vacancy + o.mgmt) / 100 + price * (o.taxRate + o.insRate + o.maintRate) / 100 + (o.hoa || 0) * 12;
     const noi = gross - expenses;
-    const cashIn = price * (o.downPct + o.closingPct) / 100;
+    const cashIn = downAt(price, o) + price * o.closingPct / 100;
     const cashFlow = noi / 12 - m.pi;
     return { gross, expenses, noi, capRate: noi / price * 100, cashFlow, cashIn,
              cashOnCash: cashFlow * 12 / cashIn * 100, pi: m.pi };
   }
 
-  return { pmt, monthly, maxPrice, percentile, windowGrowth, growthBand, rateMoves, simulate, rental };
+  return { pmt, monthly, downAt, pctAt, maxPrice, percentile, windowGrowth, growthBand, rateMoves, simulate, rental };
 })();
 if (typeof module !== "undefined") module.exports = Calc;
