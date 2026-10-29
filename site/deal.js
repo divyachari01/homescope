@@ -241,16 +241,20 @@ const Deal = (() => {
     const fc1 = rec.fc?.["1"]?.[1];
     if (fc1 != null && fc1 < 0) add(-1, `prices here are forecast to dip (${fc1.toFixed(1)}% next year)`);
     else if (fc1 != null && fc1 > 5) add(0.5, `prices here are forecast to rise (${fc1.toFixed(1)}% next year)`);
-    if (bad.some(b => /foundation|water|mold|fire/.test(b))) add(-4, "the listing mentions possible structural or water problems");
-    else if (bad.some(b => /as-is|needs work|distressed/.test(b))) add(-3, "it's sold as-is or needs work, so repairs come out of your pocket");
+    // condition: common guidance is 5-10% under for cosmetic work and 15-25% under for major repairs
+    const major = bad.some(b => /foundation|water|mold|fire/.test(b)), work = bad.some(b => /as-is|needs work|distressed/.test(b));
+    if (major) add(-10, "the listing mentions possible structural or water problems; get repair quotes and adjust further if they're big");
+    else if (work) add(-5, "it's sold as-is or needs work, so repairs come out of your pocket");
     if ((rec.hazard?.top || []).some(([n, , lab]) => /flood/i.test(n) && /high/i.test(lab || ""))) add(-1, "high flood risk adds flood insurance");
     if (s.hoa > 500) add(-0.5, `a high HOA (${Math.round(s.hoa)}/mo) narrows the pool of buyers`);
     const month = new Date(today).getMonth();
     if ([10, 11, 0].includes(month)) add(-1, "late fall and winter are the slow season, with fewer buyers");
-    const adj = Math.max(-8, Math.min(3, moves.reduce((t, m) => t + m.pct, 0))) / 100;
+    const adj = Math.max(major ? -15 : work ? -12 : -8, Math.min(3, moves.reduce((t, m) => t + m.pct, 0))) / 100;
     target *= 1 + adj;
     if (!hot) target = Math.min(target, L);
-    const opening = hot ? Math.min(target, Math.max(L, E)) : Math.min(target * (soft ? 0.96 : 0.98), L * 0.99);
+    // Opening offers below about 88% of asking rarely get a reply unless the house needs real work.
+    const floor = L * (major ? 0.78 : work ? 0.85 : 0.88);
+    const opening = Math.max(floor, hot ? Math.min(target, Math.max(L, E)) : Math.min(target * (soft ? 0.96 : 0.98), L * 0.99));
     // value + 3% (or the aim, if higher), but outside a seller's market never more than asking
     const valueWalk = Math.min(Math.max(Number.isFinite(F) ? F : target, target) * 1.03, hot ? Infinity : L);
     // Your budget caps it, unless even the expected price is over budget (then that's flagged instead).
