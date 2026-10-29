@@ -4,7 +4,7 @@
 (() => {
   const $ = s => document.querySelector(s);
   const DEFAULTS = {
-    income: 100000, debts: 300, cash: "", save: 1500, rent0: 1500, downPct: 20, downAmt: "", maxMonthly: "", years: 30, rate: "",
+    income: 100000, debts: 0, cash: "", save: 0, rent0: 1500, downPct: 20, downAmt: "", maxMonthly: "", years: 30, rate: "",
     housingShare: 28, dtiCap: 36, taxRate: "", insRate: "", pmiRate: 0.5, maintRate: 1, closingPct: "",
     sellPct: 6, hoa: "", incomeGrowth: 3, invReturn: 5, rateShift: 0, H: 10, invPremium: 0.75, invDown: 25,
     vacancy: 5, mgmt: 8, hackRent: "", strNightly: 150, strOcc: 55, strFees: 25,
@@ -40,6 +40,7 @@
     // Older versions saved fixed defaults for these; blank them so each zip's own values are used.
     if (saved.insRate === "0.5") delete saved.insRate;
     if (saved.closingPct === "3") delete saved.closingPct;
+    delete saved.debts; delete saved.save;             // no longer asked for
     // Cash saved used to cap the budget; it's optional now (blank = budget from income and down payment %).
     try { if (!localStorage.getItem("hc-cash-optional")) { delete saved.cash; localStorage.setItem("hc-cash-optional", "1"); } } catch (e) { /* ignore */ }
     document.querySelectorAll("[data-k]").forEach(el => {
@@ -508,7 +509,8 @@
     if (!hist || !tp) { $("#s-timing").innerHTML = ""; return; }
     const b = bands(hist, o), fc = rec.fc && rec.fc["5"] ? rec.fc : null;
     if (!fc && !b.plan) { $("#s-timing").innerHTML = `<h2>Outlook</h2><p class="note">Not enough price history here to build a range.</p>`; return; }
-    const sim = { ...o, price0: tp, rate0: o.ratePct, cash0: o.cashKnown ? o.cash : Calc.downAt(tp, o) + tp * o.closingPct / 100 };
+    const ownNow = Calc.monthly(tp, o).total + tp * o.maintRate / 1200;
+    const sim = { ...o, save: Math.max(0, ownNow - o.rent0), price0: tp, rate0: o.ratePct, cash0: o.cashKnown ? o.cash : Calc.downAt(tp, o) + tp * o.closingPct / 100 };
     const ann = x => Math.pow(1 + x / 100, 1 / 5) - 1;     // 5-year % change -> yearly rate
     const scen = fc ? { low: ann(fc["5"][0]), mid: ann(fc["5"][1]), high: ann(fc["5"][2]) }
                     : { low: b.plan.low, mid: b.plan.mid, high: b.plan.high };
@@ -547,7 +549,7 @@
         <tr><td>Keep renting</td><td colspan="6" class="muted" style="text-align:left">Rent ${money(o.rent0)}/mo, rising with typical rent growth, savings invested</td>
           <td>${k(rentOnly.low.netWorth)}</td><td>${k(rentOnly.mid.netWorth)}</td><td>${k(rentOnly.high.netWorth)}</td></tr>
       </table></div>
-      <p class="note">Each plan spends the same each month (your rent plus savings); money not spent on housing earns ${o.invReturn}%/yr. Net worth = savings + home equity after ${o.sellPct}% selling costs. Rent grows ${o.rentGrowth.toFixed(1)}%/yr.</p>`;
+      <p class="note">Each plan spends the same each month (what owning costs now); while renting, the difference is invested at ${o.invReturn}%/yr. Net worth = savings + home equity after ${o.sellPct}% selling costs. Rent grows ${o.rentGrowth.toFixed(1)}%/yr.</p>`;
     // fan chart: last 15 years of history + 10 years of range
     const lastI = hist.vals.length - 1, startI = Math.max(0, lastI - 15);
     const labels = [], hv = [], lo = [], mi = [], hi = [];

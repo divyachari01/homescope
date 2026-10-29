@@ -209,8 +209,12 @@ const Deal = (() => {
     const bt = ctx.bt || backtest(sold, idx, today);      // same for every home in a zip, so callers can pass it in
     const rule = offerRule(L, F, stl, s.daysOnMarket, zipDom, bt.w ?? 0.1, bt.d ?? 0.97, bt.k ?? 1);
     const label = mk.label || (rule.m >= 1 ? "Seller's market" : rule.m < 0.97 ? "Buyer's market" : "Balanced");
-    const hot = label === "Seller's market" || rule.m >= 1, soft = label === "Buyer's market" || rule.stale;
-    if (!hot) rule.offer = Math.min(rule.offer, L);       // outside a seller's market, don't plan to pay over asking
+    // Bidding over asking only makes sense for a fresh listing in a hot market. A home that has sat longer
+    // than is typical here has no competing buyers to beat, whatever the market overall.
+    const fresh = s.daysOnMarket == null || s.daysOnMarket <= Math.max(14, Number.isFinite(zipDom) ? zipDom : 30);
+    const hot = (label === "Seller's market" || rule.m >= 1) && fresh && !rule.stale;
+    const soft = label === "Buyer's market" || rule.stale || !fresh;
+    if (!hot) rule.offer = Math.min(rule.offer, L * (rule.stale ? 0.97 : 1));   // never plan to pay over asking then
     const opening = Math.min(rule.offer * (hot ? 1 : soft ? 0.97 : 0.985), hot ? Infinity : L * 0.99);
     // value + 3%, but outside a seller's market never more than asking
     const valueWalk = Math.min((Number.isFinite(F) ? F : rule.offer) * 1.03, hot ? Infinity : L);
