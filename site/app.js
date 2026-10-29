@@ -60,7 +60,7 @@
       const v = el.value.trim();
       o[el.dataset.k] = v === "" ? null : Number(v);
     });
-    for (const [key, def] of Object.entries(DEFAULTS)) if (o[key] === null || Number.isNaN(o[key])) o[key] = def === "" ? null : def;
+    for (const [key, def] of Object.entries(DEFAULTS)) if (o[key] == null || Number.isNaN(o[key])) o[key] = def === "" ? null : def;
     o.ratePct = o.rate ?? currentRate(o.years);
     // California resets the tax to about 1.1% of the price when a home sells (Prop 13), so long-time
     // owners' low bills (what the Census rate reflects) don't apply to a buyer.
