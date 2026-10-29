@@ -218,9 +218,38 @@ const Deal = (() => {
     // Two sides of the price: what the home is worth (F) and what sellers here actually get (E).
     // Aim between them, so neither the listing price nor an automated estimate alone sets the offer.
     const E = rule.offer;
+    const featLines = Object.values(s.features || {}).flat();
+    const text = [s.text || "", ...featLines].join(" . ");
+    const good = scan(text, GOOD), bad = scan(text, BAD);
     let target = Number.isFinite(F) ? Math.sqrt(F * E) : E;
     if (hot) target = Math.min(Math.max(target, E), (Number.isFinite(F) ? Math.max(F, E) : E) * 1.03);   // a fresh hot listing needs a competitive bid
     else target = Math.min(target, L, soft ? E * 1.02 : Infinity);   // in a slow market, don't pay much over what homes really sell for
+    // Things outside the two prices that should move the offer, each a small, stated step.
+    const moves = [], add = (pct, why) => moves.push({ pct, why });
+    const dom = s.daysOnMarket, zd = Number.isFinite(zipDom) ? zipDom : null;
+    if (dom != null && zd) {
+      if (dom > 2 * zd) add(-2, `on the market ${dom} days, more than twice the usual ${Math.round(zd)}`);
+      else if (dom > 1.5 * zd) add(-1, `on the market ${dom} days vs the usual ${Math.round(zd)}`);
+      else if (hot && dom <= 7) add(1, "just listed in a hot market, so expect other offers");
+    }
+    if (bad.includes("price already cut")) add(-1, "the seller has already cut the price");
+    const cuts = mk.price_drops, inv = mk.inventory, inv0 = mk.year_ago?.inventory;
+    if (cuts != null && cuts > 0.4) add(-1, `${Math.round(cuts * 100)}% of listings here have cut their price`);
+    else if (cuts != null && cuts < 0.15) add(0.5, `few listings here cut their price (${Math.round(cuts * 100)}%)`);
+    if (inv && inv0 && inv / inv0 > 1.2) add(-1, `homes for sale here are up ${Math.round((inv / inv0 - 1) * 100)}% from a year ago`);
+    else if (inv && inv0 && inv / inv0 < 0.8) add(0.5, `homes for sale here are down ${Math.round((1 - inv / inv0) * 100)}% from a year ago`);
+    const fc1 = rec.fc?.["1"]?.[1];
+    if (fc1 != null && fc1 < 0) add(-1, `prices here are forecast to dip (${fc1.toFixed(1)}% next year)`);
+    else if (fc1 != null && fc1 > 5) add(0.5, `prices here are forecast to rise (${fc1.toFixed(1)}% next year)`);
+    if (bad.some(b => /foundation|water|mold|fire/.test(b))) add(-4, "the listing mentions possible structural or water problems");
+    else if (bad.some(b => /as-is|needs work|distressed/.test(b))) add(-3, "it's sold as-is or needs work, so repairs come out of your pocket");
+    if ((rec.hazard?.top || []).some(([n, , lab]) => /flood/i.test(n) && /high/i.test(lab || ""))) add(-1, "high flood risk adds flood insurance");
+    if (s.hoa > 500) add(-0.5, `a high HOA (${Math.round(s.hoa)}/mo) narrows the pool of buyers`);
+    const month = new Date(today).getMonth();
+    if ([10, 11, 0].includes(month)) add(-1, "late fall and winter are the slow season, with fewer buyers");
+    const adj = Math.max(-8, Math.min(3, moves.reduce((t, m) => t + m.pct, 0))) / 100;
+    target *= 1 + adj;
+    if (!hot) target = Math.min(target, L);
     const opening = hot ? Math.min(target, Math.max(L, E)) : Math.min(target * (soft ? 0.96 : 0.98), L * 0.99);
     // value + 3% (or the aim, if higher), but outside a seller's market never more than asking
     const valueWalk = Math.min(Math.max(Number.isFinite(F) ? F : target, target) * 1.03, hot ? Infinity : L);
@@ -236,15 +265,13 @@ const Deal = (() => {
     const landShare = withLand ? withLand[2] / withLand[4] : null;
     const taxTrend = th.length >= 4 && th[0][1] && th[th.length - 1][1] ? (Math.pow(th[0][1] / th[th.length - 1][1], 1 / (th[0][0] - th[th.length - 1][0])) - 1) * 100 : null;
 
-    const featLines = Object.values(s.features || {}).flat();
-    const text = [s.text || "", ...featLines].join(" . ");
     const facts = featLines.filter(t => /foundation|construction material|roof|siding|exterior|structure|heating features|cooling features|sewer|water source|basement|common walls/i.test(t)
       && !/:\s*(?:no|none|0)$/i.test(t));
     return {
       L, F, gap, reads, comps: cs, comp, stl: rule.m, zipDom, stale: rule.stale, label, hot, soft,
       offer: target, expected: E, opening, walk, overBudget: ctx.maxPrice && ctx.maxPrice < target, maxPrice: ctx.maxPrice,
       flip, lastIdx, taxNow, taxAfter, taxTrend, landShare, landValue: landShare && Number.isFinite(F) ? landShare * F : null,
-      good: scan(text, GOOD), bad: scan(text, BAD), build: scan(text, BUILD), facts: [...new Set(facts)].slice(0, 12),
+      good, bad, build: scan(text, BUILD), moves, adj, facts: [...new Set(facts)].slice(0, 12),
       views7: s.views7, saves7: s.saves7,
       loans: loans(target, o, s.hoa, ctx.rate15),
       backtest: bt, nonDisclosure: NON_DISCLOSURE.has(rec.state) && sold.length < 8,

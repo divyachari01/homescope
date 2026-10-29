@@ -943,6 +943,8 @@
         <div><div class="k">Walk away above</div><div class="v">${k(d.walk)}</div><div class="note">${d.walk === d.maxPrice ? "your budget" : d.walk === d.L ? "the asking price" : "value estimate + 3%"}</div></div>
       </div>
       ${d.overBudget ? `<p><span class="pill warn">Over your budget of ${k(d.maxPrice)}</span></p>` : ""}
+      <p class="note">The aim starts between the home's value${Number.isFinite(d.F) ? ` (${k(d.F)})` : ""}, the asking price (${k(d.L)}) and what similar homes sell for (${k(d.expected)})${d.moves.length ? `, then moves ${d.adj >= 0 ? "up" : "down"} ${Math.abs(d.adj * 100).toFixed(1).replace(".0", "")}% for:` : "."}</p>
+      ${d.moves.length ? `<ul class="note tight">${d.moves.map(m => `<li>${m.pct > 0 ? "+" : ""}${m.pct}%: ${esc(m.why)}</li>`).join("")}</ul>` : ""}
       ${(() => { const f = s.orient?.facing || shortlist[deal.id]?.facing, v = vaastuScore({ ...(shortlist[deal.id] || {}), facing: f, tjunction: s.orient ? !!s.orient.tjunction : undefined });
         return f ? `<p class="vaastu-line"><b>Vaastu ${v ? `${v.pct}%` : ""}</b>${v ? ` <span class="muted">(from ${v.checks} of 8 checks)</span>` : ""} &middot; faces ${DIR_NAMES[f].toLowerCase()} (${facingRatingText(f)} in Vaastu)${s.orient?.tjunction ? " &middot; a street points straight at it" : ""}${s.orient?.corner ? " &middot; corner lot" : ""}. ${shortlist[deal.id] ? "" : "Save it to add the rooms for a full score."}</p>`
           : `<p class="vaastu-line muted">Facing not known yet, so no Vaastu score. Check the satellite view.</p>`; })()}
