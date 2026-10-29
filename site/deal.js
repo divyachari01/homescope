@@ -165,6 +165,12 @@ const Deal = (() => {
       mk("VA, 0% down (veterans and service members)", 0, P * 1.0215, r, 30, 0, "2.15% funding fee (first use) added to the loan, no monthly insurance."),
     ];
     if (rate15) out.push(mk("15-year fixed, 20% down", 20, base, rate15, 15, 0, "Higher payment, far less interest overall."));
+    // Your own dollar down payment goes first, at whatever percent it works out to for this price.
+    if (o.downAmt != null && P > 0) {
+      const dp = Math.min(100, o.downAmt / P * 100), loan = P - Math.min(P, o.downAmt);
+      out.unshift(mk(`Your plan: ${Math.round(o.downAmt / 1000)}k down (${dp.toFixed(1)}%)`, dp, loan, r, o.years || 30,
+        dp < 20 ? loan * o.pmiRate / 1200 : 0, dp < 20 ? "Under 20% down, so mortgage insurance until you reach about 22% equity." : "20% or more down, so no mortgage insurance."));
+    }
     return out;
   }
 

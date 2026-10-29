@@ -411,6 +411,7 @@
   // 5 / 10 / 15 / 20% down side by side for the selected home.
   function downTable(tp, o) {
     const opts = [5, 10, 15, 20];
+    if (o.downAmt != null && tp > 0) opts.unshift(Math.min(100, o.downAmt / tp * 100));   // your own $ amount first
     const cols = opts.map(dp => {
       const m = Calc.monthly(tp, { ...o, downPct: dp, downAmt: null }), cash = tp * (dp + o.closingPct) / 100;
       const share = m.total / (o.income / 12) * 100, dti = (m.total + o.debts) / (o.income / 12) * 100;
@@ -418,9 +419,9 @@
       const why = cash > o.cash ? "Cash short" : share > o.housingShare || dti > o.dtiCap ? "Payment too high" : "Yes";
       return { dp, m, cash, share, ok, why };
     });
-    const row = (label, f) => `<tr><td>${label}</td>${cols.map(c => `<td${o.downAmt == null && c.dp === o.downPct ? ' style="font-weight:650"' : ""}>${f(c)}</td>`).join("")}</tr>`;
+    const row = (label, f) => `<tr><td>${label}</td>${cols.map(c => `<td${(o.downAmt == null ? c.dp === o.downPct : c === cols[0]) ? ' style="font-weight:650"' : ""}>${f(c)}</td>`).join("")}</tr>`;
     return `<div class="table-wrap"><table>
-      <tr><th></th>${cols.map(c => `<th>${c.dp}% down</th>`).join("")}</tr>
+      <tr><th></th>${cols.map((c, i) => `<th>${o.downAmt != null && i === 0 ? `Your ${k(o.downAmt)} (${c.dp.toFixed(1)}%)` : `${c.dp}% down`}</th>`).join("")}</tr>
       ${row("Cash up front (incl. closing)", c => k(c.cash))}
       ${row("Loan", c => k(c.m.loan))}
       ${row("Mortgage insurance / mo", c => c.m.pmi ? money(c.m.pmi) : "None")}
@@ -1335,7 +1336,12 @@
     const el = $("#budgetTxt");
     if (!el || !NAT) return;
     const o = inputs(), mp = Calc.maxPrice(o), m = Calc.monthly(mp.price, o);
-    el.textContent = `up to ${k(mp.price)}, about ${money(m.total)}/mo with ${k(Calc.downAt(mp.price, o))} down`;
+    const dn = Calc.downAt(mp.price, o);
+    el.textContent = `up to ${k(mp.price)}, about ${money(m.total)}/mo with ${k(dn)} down (${mp.price > 0 ? Math.round(dn / mp.price * 100) : 0}%)`;
+    // A set dollar amount replaces the %, so grey the % box out and show what the dollars work out to.
+    const pctBox = document.querySelector('[data-k="downPct"]'), hint = $("#downHint");
+    if (pctBox) pctBox.disabled = o.downAmt != null;
+    if (hint) hint.textContent = o.downAmt != null && mp.price > 0 ? `(using your $ amount: ${(dn / mp.price * 100).toFixed(1)}% at ${k(mp.price)})` : "";
   }
   function placeFromRec(z, r) {
     return { zip: z, city: r.city, state: r.state, county: r.county, lat: r.lat, lon: r.lon, value: r.zhvi_now?.all || r.acs?.home_value,
