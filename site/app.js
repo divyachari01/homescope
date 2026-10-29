@@ -1513,8 +1513,11 @@
         ${Number.isFinite(medOf("crime")) ? `<span title="${crimeName()} per 100,000 people a year, county level">Crime <b>${crimeLevel(medOf("crime"))}</b> (${medOf("crime").toFixed(1)} ${crimeName().toLowerCase()} per 100k, county)</span>` : ""}
       </div>
       ${homesCtx.mode === "county" && !homesCtx.view ? `<div class="row">Cities in ${esc(homesCtx.label)}: ${cityCounts().map(([c, n]) => `<button type="button" class="chipbtn" data-city="${esc(c)}">${esc(c)} (${n} zip${n > 1 ? "s" : ""})</button>`).join("")}</div>` : ""}
-      <div class="row">${homeZips().filter(p => p.here || homesCtx.view).slice(0, 8).map(p => `<button type="button" class="chipbtn" data-report="${p.zip}">Area report: ${p.zip}</button>`).join("")}</div>`;
-    $("#areaStrip").querySelectorAll("[data-report]").forEach(b => b.onclick = () => openReport(b.dataset.report));
+      ${(() => { const zs = homeZips().filter(p => p.here || homesCtx.view);
+        return zs.length === 1 ? `<button type="button" class="chipbtn" id="reportOne">Area report for ${zs[0].zip}</button>`
+          : `<label class="note">Area report: <select id="reportPick"><option value="">pick a zip code</option>${zs.map(p => `<option value="${p.zip}">${p.zip} ${esc(p.city || "")}</option>`).join("")}</select></label>`; })()}`;
+    if ($("#reportOne")) $("#reportOne").onclick = () => openReport(homeZips()[0].zip);
+    if ($("#reportPick")) $("#reportPick").onchange = e => { if (e.target.value) openReport(e.target.value); };
     $("#areaStrip").querySelectorAll("[data-city]").forEach(b => b.onclick = () => { $("#zip").value = `${b.dataset.city}, ${homesCtx.st}`; citySearch(b.dataset.city, homesCtx.st); });
 
     const types = ["All", ...new Set(homes.map(h => typeOf(h.s)))];
@@ -1528,7 +1531,7 @@
       </div>
       <details class="sub"><summary>More filters</summary>
         <div class="row filters" style="margin-top:6px">
-          ${sel("fSqft", [[0, "Any size"], [1000, "1,000+ sq ft"], [1500, "1,500+ sq ft"], [2000, "2,000+ sq ft"], [3000, "3,000+ sq ft"]], F.sqft)}
+          ${sel("fSqft", [[0, "Any size"], ...[500, 750, 1000, 1250, 1500, 1750, 2000, 2500, 3000, 3500, 4000].map(v => [v, `${v.toLocaleString()}+ sq ft`])], F.sqft)}
           <label class="note"><input type="checkbox" id="fVaastu" ${F.vaastu ? "checked" : ""}> Vaastu facing only (N, E, NE)</label>
           ${homesCtx.mode !== "zip" ? `<label class="note"><input type="checkbox" id="fNear" ${F.nearby ? "checked" : ""}> Include nearby towns</label>` : ""}
         </div>
