@@ -6,3 +6,7 @@ Census
   ACS 2025 not available: HTTP 404, reply: '<!doctype html><html lang="en"><head><title>HTTP Status 404 ? Not Found</title><style type="text/css">
 Crime and elections
   crime measure used: Homicides raw value
+  WARNING: elections download failed: 400 Client Error: Bad Request for url: https://dataverse.harvard.edu/api/access/datafile/13573089
+  elections from the GitHub backup
+Computing indicators
+Extra data
