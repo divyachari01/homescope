@@ -1,2 +1,2 @@
-43201: 119 for sale, 570 for rent (Realtor.com)
-43201: facing direction estimated for 118 of 119 homes
+43201: could not estimate facing directions: 504 Server Error: Gateway Timeout for url: https://overpass.private.coffee/api/interpreter
+43201: 118 for sale, 565 for rent (Realtor.com)
