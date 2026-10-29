@@ -1330,7 +1330,7 @@
   const norm = t => t.toLowerCase().replace(/^st\.? /, "saint ").replace(/[^a-z ]/g, "").trim();
   let homesCtx = null;                     // { label, st, zips: [place rows], here: Set of zips searched, mode }
   const recs = new Map(), partsCache = new Map();
-  const F = { max: null, beds: 0, baths: 0, type: "All", sqft: 0, nearby: false, sort: "best", vaastu: false, shown: 24 };
+  const F = { max: null, beds: 0, baths: 0, types: new Set(), sqft: 0, nearby: false, sort: "best", vaastu: false, shown: 24 };
 
   function updateBudget() {
     const el = $("#budgetTxt");
@@ -1494,7 +1494,7 @@
     const budget = Math.round(Calc.maxPrice(o).price / 5000) * 5000, cap = F.max ?? budget;
     const typeOf = s => LISTING_GROUPS[s.propertyType] || s.propertyType || "Other";
     const passes = h => (F.beds === -1 ? h.s.bedrooms === 0 : (h.s.bedrooms ?? 0) >= F.beds) && (h.s.bathrooms ?? 0) >= F.baths && (!F.sqft || (h.s.squareFootage ?? 0) >= F.sqft)
-      && (F.type === "All" || typeOf(h.s) === F.type) && (!F.vaastu || ["N", "E", "NE"].includes(h.s.orient?.facing));
+      && (!F.types.size || F.types.has(typeOf(h.s))) && (!F.vaastu || ["N", "E", "NE"].includes(h.s.orient?.facing));
     const inMap = h => !F.bounds || (h.s.latitude && F.bounds.contains([h.s.longitude, h.s.latitude]));
     let shown = homes.filter(h => h.s.price <= cap && passes(h) && inMap(h)), noneInBudget = false;
     if (!shown.length && F.max == null && homes.length) { shown = homes.filter(h => passes(h) && inMap(h)); noneInBudget = true; }
@@ -1529,14 +1529,19 @@
     if ($("#reportPick")) $("#reportPick").onchange = e => { if (e.target.value) openReport(e.target.value); };
     $("#areaStrip").querySelectorAll("[data-city]").forEach(b => b.onclick = () => { $("#zip").value = `${b.dataset.city}, ${homesCtx.st}`; citySearch(b.dataset.city, homesCtx.st); });
 
-    const types = ["All", ...new Set(homes.map(h => typeOf(h.s)))];
+    const types = [...new Set([...homes.map(h => typeOf(h.s)), ...F.types])];
+    // Home type: tick as many as you like (none ticked = all types).
+    const typeLabel = !F.types.size ? "All types" : [...F.types].join(", ");
+    const typeBox = `<details class="multi" id="fTypes"${F.typesOpen ? " open" : ""}><summary>${esc(typeLabel)}</summary><div class="multi-list">
+        ${types.map(t => `<label><input type="checkbox" data-type="${esc(t)}" ${F.types.has(t) ? "checked" : ""}> ${esc(t)}</label>`).join("")}
+        ${F.types.size ? `<button type="button" class="chipbtn" id="fTypesClear">Show all types</button>` : ""}</div></details>`;
     const sel = (id, opts, v) => `<select id="${id}">${opts.map(([val, lab]) => `<option value="${val}" ${String(val) === String(v) ? "selected" : ""}>${lab}</option>`).join("")}</select>`;
     $("#filters").innerHTML = `<div class="row filters">
         ${sel("fMax", [...new Map([...[50, 100, 200, 300, 400, 500, 600, 750, 1000, 1500, 2500, 5000].map(v => [v * 1000, `Up to ${k(v * 1000)}`]),
           [budget, `Up to ${k(budget)} (your budget)`]].sort((a, b) => a[0] - b[0]).map(x => [x[0], x])).values()].concat([[1e12, "$5M and up"]]), cap)}
         ${sel("fBeds", [[0, "Any beds"], [-1, "Studio"], [1, "1+ beds"], [2, "2+ beds"], [3, "3+ beds"], [4, "4+ beds"], [5, "5+ beds"]], F.beds)}
         ${sel("fBaths", [[0, "Any baths"], [1, "1+ baths"], [2, "2+ baths"], [3, "3+ baths"], [4, "4+ baths"]], F.baths)}
-        ${sel("fType", types.map(t => [t, t === "All" ? "All types" : t]), F.type)}
+        ${typeBox}
         ${sel("fSort", [["best", "Best match"], ["low", "Lowest price"], ["high", "Highest price"], ["new", "Newest"], ["big", "Largest"], ["small", "Smallest"]], F.sort)}
       </div>
       <details class="sub"><summary>More filters</summary>
@@ -1554,8 +1559,14 @@
         ${loading && !homes.length ? "" : noneInBudget ? `Nothing within your budget of ${k(budget)} here. Cheapest homes shown.` : `<b>${shown.length}</b> home${shown.length === 1 ? "" : "s"}${shown.length ? ", best matches first" : ". Try fewer filters or a higher price"}.`}</p>`;
     const on = (id, f) => { const x = $("#" + id); if (x) x.onchange = e => { f(e.target); F.shown = 24; renderHomes(); }; };
     on("fMax", t => { F.max = Number(t.value) === budget ? null : Number(t.value); }); on("fBeds", t => { F.beds = Number(t.value); });
-    on("fBaths", t => { F.baths = Number(t.value); }); on("fType", t => { F.type = t.value; }); on("fSort", t => { F.sort = t.value; });
+    on("fBaths", t => { F.baths = Number(t.value); }); on("fSort", t => { F.sort = t.value; });
     on("fSqft", t => { F.sqft = Number(t.value); }); on("fVaastu", t => { F.vaastu = t.checked; }); on("fNear", t => { F.nearby = t.checked; });
+    const tb = $("#fTypes");
+    if (tb) {
+      tb.ontoggle = () => { F.typesOpen = tb.open; };
+      tb.querySelectorAll("[data-type]").forEach(c => c.onchange = () => { c.checked ? F.types.add(c.dataset.type) : F.types.delete(c.dataset.type); F.shown = 24; renderHomes(); });
+      if ($("#fTypesClear")) $("#fTypesClear").onclick = () => { F.types.clear(); F.shown = 24; renderHomes(); };
+    }
     $("#filters").querySelectorAll("#fFact [data-f]").forEach(b => b.onclick = () => { const f = b.dataset.f; lOn.has(f) ? lOn.delete(f) : lOn.add(f); saveSet("hc-lfact", lOn); renderHomes(); });
 
     $("#homeList").innerHTML = shown.slice(0, F.shown).map(h => {
@@ -1725,6 +1736,8 @@
     else if (!$("#results").hidden && rec) renderAll();
     if (deal) renderDeal(inputs());
   }
+  // Close the home-type list when tapping anywhere else.
+  document.addEventListener("click", e => { const tb = $("#fTypes"); if (tb?.open && !tb.contains(e.target)) { tb.open = false; F.typesOpen = false; } });
   const liveUpdate = () => { clearTimeout(typingTimer); typingTimer = setTimeout(() => { saveInputs(); refresh(); }, 350); };
   $("#purpose").addEventListener("change", () => { saveInputs(); refresh(); });
   $("#backHomes").addEventListener("click", () => { if (homesCtx) { $("#results").hidden = true; $("#v-homes").hidden = false; renderHomes(); window.scrollTo(0, 0); } else { $("#zip").value = zip; zipSearch(zip); } });
