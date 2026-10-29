@@ -1558,7 +1558,7 @@
         <div class="body">
           <div class="headrow"><span class="price">${money(s.price)}</span></div>
           <div>${[s.bedrooms != null ? `${s.bedrooms} bd` : "", s.bathrooms ? `${s.bathrooms} ba` : "", s.squareFootage ? `${s.squareFootage.toLocaleString()} sq ft` : "", esc(typeOf(s))].filter(Boolean).join(" &middot; ")}</div>
-          <div class="note">${esc((s.formattedAddress || "").replace(/, [A-Z]{2},? \d{5}$/, ""))}</div>
+          <div class="note">${esc((s.formattedAddress || "").replace(/, [A-Z]{2},? \d{5}$/, ""))}${s.daysOnMarket != null ? ` &middot; ${s.daysOnMarket} day${s.daysOnMarket === 1 ? "" : "s"} on market` : ""}</div>
           ${j.d && h.fits ? `<div class="offer">Offer around <b>${k(Math.min(j.d.opening, j.d.walk))}</b> &middot; ${money(h.pay)}/mo</div>` : `<div class="note">${money(h.pay)}/mo</div>`}
           ${s.orient?.facing ? `<div class="vaastu">Faces ${DIR_NAMES[s.orient.facing].toLowerCase()} &middot; ${facingRatingText(s.orient.facing)} in Vaastu${s.orient.tjunction ? " &middot; street points at it" : ""}</div>`
             : liveCache.get(h.p.zip)?.mapState === "loading" ? `<div class="vaastu muted">Checking which way it faces...</div>` : ""}
