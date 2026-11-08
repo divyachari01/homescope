@@ -1,13 +1,6 @@
 National series
   downloaded pmms
 Zillow
-  downloaded zhvi_all
-  downloaded zhvi_sfr
-  downloaded zhvi_condo
-  downloaded zhvi_bottom
-  downloaded zhvi_top
-  downloaded zori
-  downloaded zhvf
 FHFA
 Census
   ACS 2025 not available: HTTP 404, reply: '<!doctype html><html lang="en"><head><title>HTTP Status 404 ? Not Found</title><style type="text/css">
