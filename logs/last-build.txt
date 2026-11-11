@@ -1,14 +1,9 @@
 National series
   downloaded pmms
+  downloaded CPI
 Zillow
-  downloaded zhvi_all
-  downloaded zhvi_sfr
-  downloaded zhvi_condo
-  downloaded zhvi_bottom
-  downloaded zhvi_top
-  downloaded zori
-  downloaded zhvf
 FHFA
+  downloaded fhfa
 Census
   ACS 2025 not available: HTTP 404, reply: '<!doctype html><html lang="en"><head><title>HTTP Status 404 ? Not Found</title><style type="text/css">
 Crime and elections
@@ -19,6 +14,8 @@ Computing indicators
 Extra data
   WARNING: skipping nri: 403 Client Error: Forbidden for url: https://www.fema.gov:443/emergency-managers/practitioners/resilience-analysis-and-planning-tool
   WARNING: skipping redfin: 403 Client Error: Forbidden for url: https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_market_tracker/zip_code_market_tracker.tsv000.gz
+  downloaded realtor
+  downloaded fed
 /home/runner/work/homescope/homescope/pipeline/build_data.py:473: DtypeWarning: Columns (7,16,25) have mixed types. Specify dtype option on import or set low_memory=False.
   df = pd.read_csv(path, dtype={"area_fips": str, "own_code": str, "agglvl_code": str})
   district progress scores: 13622
@@ -27,6 +24,7 @@ Population and building growth
   permits: US total 1,431,616 units in 2025 (expect ~1.4M)
   growth for 33971 zips; permits loaded
 Forecast model
+  downloaded stocks
 /opt/hostedtoolcache/Python/3.12.16/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
   result = getattr(ufunc, method)(*inputs, **kwargs)
 /opt/hostedtoolcache/Python/3.12.16/x64/lib/python3.12/site-packages/pandas/core/arraylike.py:399: RuntimeWarning: divide by zero encountered in log
@@ -70,4 +68,4 @@ Forecast model
 Writing zip files
   city search table: 32789 zips
   search pages: 33834 addresses in the sitemap
-Done: 33786 zip codes in 894 files. Sources as of: {'rates': '2026-11-05', 'zillow_values': '2026-09', 'zillow_rents': '2026-09', 'zillow_forecast_base': '2026-09-30', 'fhfa': 2025, 'acs': '2020-2024', 'acs_old': '2010-2014', 'crime': 'County Health Rankings 2025, homicides', 'elections': 2024, 'hazards': 'FEMA National Risk Index', 'market': '2026-09', 'market_source': 'Realtor.com', 'fed': '2026-11', 'jobs': 'BLS QCEW 2026 Q1', 'schools': 'SEDA 2025.1 (2025)', 'permits': 2025, 'population': 'ACS 5-year 2012-2024'}
+Done: 33786 zip codes in 894 files. Sources as of: {'rates': '2026-11-05', 'zillow_values': '2026-09', 'zillow_rents': '2026-09', 'zillow_forecast_base': '2026-09-30', 'fhfa': 2025, 'acs': '2020-2024', 'acs_old': '2010-2014', 'crime': 'County Health Rankings 2025, homicides', 'elections': 2024, 'hazards': 'FEMA National Risk Index', 'market': '2026-10', 'market_source': 'Realtor.com', 'fed': '2026-11', 'jobs': 'BLS QCEW 2026 Q1', 'schools': 'SEDA 2025.1 (2025)', 'permits': 2025, 'population': 'ACS 5-year 2012-2024'}
