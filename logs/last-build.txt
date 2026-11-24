@@ -1,6 +1,13 @@
 National series
   downloaded pmms
 Zillow
+  downloaded zhvi_all
+  downloaded zhvi_sfr
+  downloaded zhvi_condo
+  downloaded zhvi_bottom
+  downloaded zhvi_top
+  downloaded zori
+  downloaded zhvf
 FHFA
 Census
   ACS 2025 not available: HTTP 404, reply: '<!doctype html><html lang="en"><head><title>HTTP Status 404 ? Not Found</title><style type="text/css">
@@ -12,7 +19,6 @@ Computing indicators
 Extra data
   WARNING: skipping nri: 403 Client Error: Forbidden for url: https://www.fema.gov:443/emergency-managers/practitioners/resilience-analysis-and-planning-tool
   WARNING: skipping redfin: 403 Client Error: Forbidden for url: https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_market_tracker/zip_code_market_tracker.tsv000.gz
-  downloaded fed
 /home/runner/work/homescope/homescope/pipeline/build_data.py:473: DtypeWarning: Columns (7,16,25) have mixed types. Specify dtype option on import or set low_memory=False.
   df = pd.read_csv(path, dtype={"area_fips": str, "own_code": str, "agglvl_code": str})
   district progress scores: 13622
