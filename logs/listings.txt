@@ -1,2 +1,2 @@
-43201: 113 for sale, 521 for rent (Realtor.com)
-43201: facing direction estimated for 112 of 113 homes
+43201: could not estimate facing directions: HTTPSConnectionPool(host='overpass.private.coffee', port=443): Read timed out. (read timeout=240)
+43201: 110 for sale, 520 for rent (Realtor.com)
