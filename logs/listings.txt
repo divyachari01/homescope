@@ -1,2 +1,2 @@
-43201: could not estimate facing directions: HTTPSConnectionPool(host='overpass.private.coffee', port=443): Read timed out. (read timeout=240)
-43201: 110 for sale, 520 for rent (Realtor.com)
+43201: 109 for sale, 531 for rent (Realtor.com)
+43201: facing direction estimated for 108 of 109 homes
